@@ -43,13 +43,13 @@ postgresql:
     tag: 16.1.0-debian-11-r15
 
 # ── GitOps (see the "GitOps for Airflow" slide) ─────────────────────────────
-# In production, DAGs must NOT be mounted from a local machine like in
-# Docker Compose. Enable gitSync so every pod pulls DAGs from Git —
-# Git becomes the source of truth:
-#
-# dags:
-#   gitSync:
-#     enabled: true
-#     repo: https://github.com/<org>/dataops-from-scratch.git
-#     branch: main
-#     subPath: session_02_airflow_intro/lab/dags
+# K8s pods can't see the local dags/ folder the way Docker Compose does.
+# gitSync makes every pod pull DAGs from Git — Git is the source of truth.
+# This is how DAGs actually get into the cluster; without it, Airflow is empty.
+dags:
+  gitSync:
+    enabled: true
+    repo: https://github.com/anhnguyen907/master-class-dataops.git
+    branch: main
+    subPath: session_02_airflow_intro/lab/dags
+    credentialsSecret: git-credentials
