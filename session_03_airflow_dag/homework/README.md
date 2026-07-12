@@ -1,0 +1,104 @@
+# Session 3 Homework — Music Streaming DB→DB Pipeline
+
+Build a daily pipeline that reads from a **relational database**, transforms with a
+join + aggregation, and writes the result **back into a table** — applying every
+operating principle from session 3. This is the "real" version of the lab, which
+only generated data in memory.
+
+You run it on the same Airflow stack from session 2.
+
+## The scenario
+
+A music service stores raw listening data in Postgres. Two normalised source tables:
+
+| Table | Columns |
+|---|---|
+| `tracks` | `track_id`, `title`, `artist`, `genre` |
+| `plays` | `play_id`, `track_id`, `user_id`, `played_at`, `ms_played` |
+
+Your pipeline produces one row per (day, genre) in the target table:
+
+| Table | Columns |
+|---|---|
+| `daily_genre_stats` | `dt`, `genre`, `play_count`, `unique_listeners`, `minutes_played` |
+
+To get `genre` you must **join** `plays` to `tracks`.
+
+## 1. Setup (once)
+
+Reuse the Postgres container from the session 2 stack — you only add a separate
+`homework` database inside it, so nothing touches Airflow's own metadata.
+
+```bash
+cd session_02_airflow_intro/lab
+
+# 1. Create the homework database
+docker compose exec postgres createdb -U airflow homework
+
+# 2. Load the schema + deterministic seed data (6 tracks, 200 plays over 5 days)
+cat ../../session_03_airflow_dag/homework/seed/schema.sql \
+  | docker compose exec -T postgres psql -U airflow -d homework
+
+# 3. Register an Airflow Connection pointing at it
+docker compose exec airflow-scheduler airflow connections add homework_db \
+  --conn-uri 'postgresql://airflow:airflow@postgres:5432/homework'
+```
+
+Put your DAG file in `session_03_airflow_dag/homework/submissions/<your-name>/` —
+that folder is mounted into Airflow at `/opt/airflow/dags/homework`, so the
+scheduler picks it up within ~30s.
+
+## 2. Your task
+
+Write a DAG `genre_daily_stats` that, for each logical date, reads `plays` of that
+day, joins to `tracks`, aggregates per genre, and writes the result into
+`daily_genre_stats`. Then reconcile.
+
+Suggested shape: `transform_load >> reconcile` (or split extract/transform/load if
+you prefer). Connect to the database with
+`PostgresHook(postgres_conn_id="homework_db")`.
+
+### Requirements — the transform MUST follow these
+
+| Principle | What your pipeline must do |
+|---|---|
+| **Determinism** | Filter the source by the run's date window: `played_at >= {{ ds }}` and `< {{ ds }} + 1 day`. Never use `now()` / `CURRENT_DATE`. |
+| **Idempotency** | Load = `DELETE FROM daily_genre_stats WHERE dt = {{ ds }}` then `INSERT`. Re-running a date must not duplicate rows. |
+| **Atomicity** | Run the DELETE + INSERT in a **single transaction** (commit once; roll back on error). A failure must not leave a half-written day. |
+| **Fault tolerance** | Set `retries`, `retry_delay`, and `execution_timeout`. |
+| **Reconciliation** | A final task must assert `COUNT(*) of plays for the day == SUM(play_count) in daily_genre_stats for that day`, and fail loudly if not. |
+| **No hardcoded credentials** | Connect only via the `homework_db` Connection — no user/password in code. |
+| **Scheduling** | `@daily`, a fixed `start_date` (`2024-03-01`), `catchup=False`, `max_active_runs=1`. |
+
+## 3. Test it yourself
+
+1. **Runs clean:** trigger for `2024-03-01`, confirm `daily_genre_stats` has 3 rows (pop / rock / jazz) and reconcile passes.
+2. **Idempotent:** trigger the same date again — still 3 rows for that day, not 6.
+3. **Backfill:** `docker compose exec airflow-scheduler airflow dags backfill genre_daily_stats -s 2024-03-01 -e 2024-03-05 --reset-dagruns` → one set of rows per day, each with that day's data.
+4. **Fault tolerance:** clear one task in the UI → only that task reruns.
+
+Inspect results:
+
+```bash
+docker compose exec postgres psql -U airflow -d homework \
+  -c "SELECT * FROM daily_genre_stats ORDER BY dt, genre;"
+```
+
+## 4. Acceptance criteria
+
+- [ ] Reads from `plays` + `tracks` via a join, filtered by the run's date window (no `now()`).
+- [ ] Load is idempotent (DELETE-by-date + INSERT) and atomic (one transaction).
+- [ ] `retries` + `execution_timeout` set; reconcile task fails on a mismatch.
+- [ ] Connects only through the `homework_db` Connection.
+- [ ] Backfilling 5 days produces correct per-day rows; re-running any day does not duplicate.
+
+## 5. Submit — open a Pull Request
+
+1. Create a branch: `git checkout -b homework/session-03/<your-name>`.
+2. Add your DAG under `session_03_airflow_dag/homework/submissions/<your-name>/`.
+3. Commit and push, then **open a Pull Request** against `main`.
+4. In the PR description, include: what you did, a screenshot of `daily_genre_stats` after a backfill, and answers to:
+   - Why must the load be one transaction rather than a separate DELETE then INSERT?
+   - If you filtered with `CURRENT_DATE` instead of the run's date, what would a backfill of 2024-03-02 produce?
+
+A reviewer will check the acceptance criteria on your PR before merging.

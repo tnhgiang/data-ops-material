@@ -78,7 +78,13 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
-    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    # Shared helper package (dataops_common), reused by every session
+    - ../../plugins:/opt/airflow/plugins
+    # Session 3 DAGs + data (this stack is reused across sessions)
+    - ../../session_03_airflow_dag/lab/dags:/opt/airflow/dags/session_03
+    - ../../session_03_airflow_dag/lab/data:/opt/airflow/data
+    # Session 3 homework — student submissions land here
+    - ../../session_03_airflow_dag/homework/submissions:/opt/airflow/dags/homework
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -94,6 +100,8 @@ services:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
+    ports:
+      - "5433:5432"
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
