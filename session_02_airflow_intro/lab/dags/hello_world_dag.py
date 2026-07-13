@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 
+log = logging.getLogger(__name__)
+
 
 def _print_context(**context):
-    print(f"DAG run ID   : {context['run_id']}")
-    print(f"Logical date : {context['logical_date']}")
-    print(f"Executor     : {context['conf'].get('core', 'executor')}")
+    log.info("DAG run ID   : %s", context["run_id"])
+    log.info("Logical date : %s", context["logical_date"])
+    log.info("Executor     : %s", context["conf"].get("core", "executor"))
 
 
 default_args = {
@@ -46,12 +49,12 @@ def hello_world_dag():
     @task
     def compute_run_label(logical_date=None) -> str:
         label = f"run_{logical_date.strftime('%Y%m%d')}"
-        print(f"Run label: {label}")
+        log.info("Run label: %s", label)
         return label
 
     @task
     def finish(label: str):
-        print(f"Pipeline complete. Label: {label}")
+        log.info("Pipeline complete. Label: %s", label)
 
     label = compute_run_label()
     say_hello >> print_context >> label >> finish(label)

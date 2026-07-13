@@ -163,6 +163,9 @@ services:
       start_period: 30s
     environment:
       <<: *airflow-common-env
+      # Low concurrency so the parallel_workload demo shows a real speedup when
+      # scaling workers (tasks must exceed slots per worker; default is 16).
+      AIRFLOW__CELERY__WORKER_CONCURRENCY: "4"
       # Required to handle warm shutdown of the celery workers properly
       # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
       DUMB_INIT_SETSID: "0"

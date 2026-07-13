@@ -26,7 +26,7 @@ session_02_airflow_intro/
 │   ├── README.md        # step-by-step setup guide for the stack
 │   ├── docker-compose.yaml
 │   ├── .env.example
-│   └── dags/            # hello_world (session 2) + session 3 DAGs sharing this stack
+│   └── dags/            # hello_world + parallel_workload (demo DAGs for exploring the UI)
 └── demo/
     └── k8s_helm/        # demo: Airflow on Minikube via Helm Chart.
         ├── README.md    # setup guide for the demo stack + troubleshooting
@@ -49,7 +49,9 @@ If your stack works, **keep it** (`docker compose stop` is enough — don't `dow
 | This session | Build and understand the Airflow architecture (the 6 pipeline properties come later) |
 | Next | Session 3 — Writing DAGs & advanced concepts: idempotency, backfill, retry, XCom |
 
-Note: `lab/dags/` already contains the `order_daily_*` and `variables_pools_demo` DAGs — those belong to **session 3**, kept here because session 3 reuses this stack. For session 2 you only need `hello_world`; if you see unfamiliar DAGs in the UI, just ignore them.
+Note: this session ships two demo DAGs, used only to explore the architecture — you don't write DAGs here (that's session 3):
+- `hello_world` — a minimal DAG to see task structure, logs, and the executor.
+- `parallel_workload` — a fan-out of slow tasks; trigger it and open Flower to watch the Celery Executor distribute the tasks across workers (great for the scale-worker and stop-worker demos).
 
 ## Check yourself before you leave
 
