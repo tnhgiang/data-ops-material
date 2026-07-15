@@ -1,11 +1,5 @@
-"""
-Reference pipeline for session 3 — daily ad-campaign metrics.
-
-Raw ad events (impressions + clicks) are rolled up per campaign each day.
-Covers: idempotent partition writes, deterministic data, scheduling with catchup
-off, retries + timeouts, per-task SLA with a miss callback, a failure callback,
-a Pool on the publish step, and reading config from a Variable and a Connection.
-"""
+"""Reference pipeline for session 3 — raw ad events rolled up into daily
+per-campaign metrics, written idempotently per date."""
 
 from __future__ import annotations
 

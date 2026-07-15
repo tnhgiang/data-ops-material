@@ -46,7 +46,7 @@ session_03_airflow_dag/
 └── homework/            # take-home: DB→DB pipeline, submitted via Pull Request
     ├── README.md        # assignment: requirements + setup + submission
     ├── seed/            # source DB schema + deterministic seed data
-    └── submissions/     # students add their DAG under submissions/<name>/
+    └── submissions/     # students add their DAG here (PR is review-only, not merged)
 
 plugins/                 # repo-level, shared across sessions
 └── dataops_common/      # storage.py, sample_data.py, notifications.py

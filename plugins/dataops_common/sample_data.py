@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 CAMPAIGNS = ["brand_awareness", "retargeting", "prospecting"]
 
-# One click per N impressions → CTR ≈ 0.10 / 0.50 / 0.25 respectively.
+# Click every N impressions → CTR 0.10 / 0.50 / 0.30 over 10 impressions each.
 _CLICK_EVERY = {"brand_awareness": 10, "retargeting": 2, "prospecting": 4}
 
 

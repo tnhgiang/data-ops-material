@@ -44,7 +44,7 @@ docker compose exec airflow-scheduler airflow connections add homework_db \
   --conn-uri 'postgresql://airflow:airflow@postgres:5432/homework'
 ```
 
-Put your DAG file in `session_03_airflow_dag/homework/submissions/<your-name>/` —
+Put your DAG file in `session_03_airflow_dag/homework/submissions/` —
 that folder is mounted into Airflow at `/opt/airflow/dags/homework`, so the
 scheduler picks it up within ~30s.
 
@@ -66,9 +66,44 @@ you prefer). Connect to the database with
 | **Idempotency** | Load = `DELETE FROM daily_genre_stats WHERE dt = {{ ds }}` then `INSERT`. Re-running a date must not duplicate rows. |
 | **Atomicity** | Run the DELETE + INSERT in a **single transaction** (commit once; roll back on error). A failure must not leave a half-written day. |
 | **Fault tolerance** | Set `retries`, `retry_delay`, and `execution_timeout`. |
+| **Alerting** | Wire `on_failure_callback=notify_on_failure` (from `dataops_common.notifications`) so a failing task — e.g. a reconcile mismatch — alerts. It posts to Slack when `slack_webhook_url` is set, and just logs otherwise. |
 | **Reconciliation** | A final task must assert `COUNT(*) of plays for the day == SUM(play_count) in daily_genre_stats for that day`, and fail loudly if not. |
 | **No hardcoded credentials** | Connect only via the `homework_db` Connection — no user/password in code. |
 | **Scheduling** | `@daily`, a fixed `start_date` (`2024-03-01`), `catchup=False`, `max_active_runs=1`. |
+
+### How to build it — hints
+
+**Which operator?** Use the TaskFlow `@task` decorator with a `PostgresHook`, **not** `SQLExecuteQueryOperator`. You need to run a DELETE and an INSERT in *one* transaction and roll back on error — that transaction control is much easier from Python with a hook than from a SQL operator. Scaffold the DAG the same way `../lab/dags/campaign_daily_metrics.py` does (`@dag`, `default_args`, `@task`), so read that file first.
+
+**Getting `{{ ds }}` inside a task:** name a parameter `ds` and Airflow injects the run's date as a `"YYYY-MM-DD"` string — no manual templating needed:
+
+```python
+@task
+def transform_load(ds: str | None = None):
+    ...
+```
+
+**The transaction (this is the shape — you fill in the SQL):**
+
+```python
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+hook = PostgresHook(postgres_conn_id="homework_db")
+conn = hook.get_conn() # psycopg2 connection, autocommit OFF by default
+try:
+    with conn.cursor() as cur:
+        # Write your logic code here.
+    conn.commit()
+except Exception:
+    conn.rollback()
+    raise  # re-raise so the task fails (and on_failure_callback fires)
+finally:
+    conn.close()
+```
+
+**Reconcile** is a second `@task`: read `COUNT(*)` from `plays` for the day and `SUM(play_count)` from `daily_genre_stats` for the day (use `hook.get_first(sql, parameters=...)`), and `raise` if they differ. Wire it `transform_load(...) >> reconcile(...)`.
+
+**Alerting:** `from dataops_common.notifications import notify_on_failure`, then put `"on_failure_callback": notify_on_failure` in `default_args` (same as the lab DAGs).
 
 ## 3. Test it yourself
 
@@ -89,16 +124,17 @@ docker compose exec postgres psql -U airflow -d homework \
 - [ ] Reads from `plays` + `tracks` via a join, filtered by the run's date window (no `now()`).
 - [ ] Load is idempotent (DELETE-by-date + INSERT) and atomic (one transaction).
 - [ ] `retries` + `execution_timeout` set; reconcile task fails on a mismatch.
+- [ ] `on_failure_callback=notify_on_failure` wired so a task failure alerts (Slack if configured, else logged).
 - [ ] Connects only through the `homework_db` Connection.
 - [ ] Backfilling 5 days produces correct per-day rows; re-running any day does not duplicate.
 
 ## 5. Submit — open a Pull Request
 
 1. Create a branch: `git checkout -b homework/session-03/<your-name>`.
-2. Add your DAG under `session_03_airflow_dag/homework/submissions/<your-name>/`.
+2. Add your DAG under `session_03_airflow_dag/homework/submissions/`.
 3. Commit and push, then **open a Pull Request** against `main`.
 4. In the PR description, include: what you did, a screenshot of `daily_genre_stats` after a backfill, and answers to:
    - Why must the load be one transaction rather than a separate DELETE then INSERT?
    - If you filtered with `CURRENT_DATE` instead of the run's date, what would a backfill of 2024-03-02 produce?
 
-A reviewer will check the acceptance criteria on your PR before merging.
+The PR is for review only — a reviewer reads your code and the answers above directly on the PR. It will not be merged, so there's no need to worry about conflicts with other submissions.
