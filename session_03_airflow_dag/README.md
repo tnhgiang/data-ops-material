@@ -9,6 +9,7 @@ The pipeline runs on the **same Airflow stack you built in session 2** — sessi
 ## What you will learn
 
 - **Idempotency** — a task rewrites its date's partition instead of appending, so a rerun produces the same result as a single run.
+- **Atomicity** — a partition write lands via a temp file + atomic rename (`write_partition`), so a crash mid-write never leaves a half-written partition behind.
 - **Determinism** — events are keyed off the run's logical date, never `datetime.now()`, so a backfill for an old date reproduces exactly what that date should hold.
 - **Scheduling** — `@daily`, a fixed `start_date`, `catchup=False`, and `max_active_runs=1`, and how backfill interacts with them.
 - **Fault tolerance** — `retries`, `retry_delay`, and per-task `execution_timeout`; clearing one task reruns only that task.
@@ -18,13 +19,13 @@ The pipeline runs on the **same Airflow stack you built in session 2** — sessi
 
 ## DAGs
 
-| DAG | Role |
-|---|---|
-| `campaign_daily_metrics` | The reference pipeline: `ingest → rollup → publish → reconcile`, with every operational concept above. |
-| `campaign_spend_report` | A downstream report owned by finance; waits for the metrics pipeline that date, then flags over-budget campaigns. |
-| `campaign_alerts` | A **starter DAG you complete** — flags low-CTR campaigns. See the Exercise in [lab/README.md](lab/README.md). |
+| DAG | Location | Role |
+|---|---|---|
+| `session_03_campaign_daily_metrics` | `demo/` | The reference pipeline: `ingest → rollup → publish → reconcile`, with every operational concept above. Mentor-run — see [demo/README.md](demo/README.md). |
+| `session_03_campaign_spend_report` | `demo/` | A downstream report owned by finance; waits for the metrics pipeline that date, then flags over-budget campaigns. |
+| `session_03_campaign_alerts` | `lab/` | A **starter DAG you complete** — flags low-CTR campaigns. See the Exercise in [lab/README.md](lab/README.md). |
 
-Data flows through partition layers written to `lab/data/`:
+Data flows through partition layers written to `data/`:
 
 ```
 raw/ad_events/dt=YYYY-MM-DD                 # one row per impression
@@ -39,10 +40,13 @@ Shared helpers (`storage`, `sample_data`, `notifications`) are **not** copied in
 ```
 session_03_airflow_dag/
 ├── README.md            # this file — session overview
+├── demo/                # mentor-run material
+│   ├── README.md        # demo run-book (corrupt → reconcile catches → alert)
+│   └── dags/            # campaign_daily_metrics, campaign_spend_report
 ├── lab/
-│   ├── README.md        # setup guide: wire into the session 2 stack and run
-│   ├── dags/            # campaign_daily_metrics, campaign_spend_report, campaign_alerts
-│   └── data/            # partition output (raw / curated / published / reports)
+│   ├── README.md        # setup guide + the exercise you complete
+│   └── dags/            # campaign_alerts (starter)
+├── data/                # partition output (raw / curated / published / reports) — gitignored
 └── homework/            # take-home: DB→DB pipeline, submitted via Pull Request
     ├── README.md        # assignment: requirements + setup + submission
     ├── seed/            # source DB schema + deterministic seed data
@@ -54,7 +58,7 @@ plugins/                 # repo-level, shared across sessions
 
 ## Where to start
 
-Follow [lab/README.md](lab/README.md): it reuses the session 2 stack, adds a one-time Pool/Connection/Variable setup, and walks through running and verifying the pipeline.
+Follow [lab/README.md](lab/README.md): it reuses the session 2 stack, adds a one-time Pool/Variable setup, and walks through running the reference pipeline and completing the exercise. The mentor demo has its own run-book in [demo/README.md](demo/README.md).
 
 ## Homework
 

@@ -71,6 +71,7 @@ x-airflow-common:
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW__WEBSERVER__SHOW_TRIGGER_FORM_IF_NO_PARAMS: 'true'
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file
     # AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
@@ -80,9 +81,10 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     # Shared helper package (dataops_common), reused by every session
     - ../../plugins:/opt/airflow/plugins
-    # Session 3 DAGs + data (this stack is reused across sessions)
-    - ../../session_03_airflow_dag/lab/dags:/opt/airflow/dags/session_03
-    - ../../session_03_airflow_dag/lab/data:/opt/airflow/data
+    # Session 3 — demo DAGs, student lab DAG, shared partition data
+    - ../../session_03_airflow_dag/demo/dags:/opt/airflow/dags/session_03
+    - ../../session_03_airflow_dag/lab/dags:/opt/airflow/dags/session_03_lab
+    - ../../session_03_airflow_dag/data:/opt/airflow/data
     # Session 3 homework — student submissions land here
     - ../../session_03_airflow_dag/homework/submissions:/opt/airflow/dags/homework
   user: "${AIRFLOW_UID:-50000}:0"

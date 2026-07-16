@@ -1,195 +1,163 @@
-# Session 3 Lab — Setup Guide
+# Session 3 Lab — Ad-Campaign Metrics
 
 **Master Class DataOps for Modern Data Platforms · Session 3/11**
 
-Session 3 reuses the Airflow stack from session 2 — there is no separate stack to start here. This guide wires the session 3 DAGs into that stack and does the one-time setup they need.
+You work on the same Airflow stack from session 2 — nothing new to start.
 
-## 1. Prerequisites
+What you do in this lab:
 
-- The session 2 stack works (`docker compose ps` all healthy). See `session_02_airflow_intro/lab/README.md`.
-- Ports `8080` (Airflow) and `5555` (Flower) reachable.
+- **Labs 1–2** — drive a ready-made pipeline (`session_03_campaign_daily_metrics` and its downstream report) to *see* the ideas in action: idempotency, backfill, XCom, and a cross-DAG sensor. You don't build a DAG here — you run and observe.
+- **Lab 3** — the one you build: finish the starter DAG `session_03_campaign_alerts`.
 
-## 2. How the DAGs reach Airflow
+> The mentor's failure-and-alert demo is separate — it has its own run-book in [`../demo/README.md`](../demo/README.md).
 
-The session 2 `docker-compose.yaml` already mounts session 3 into the running containers:
+**Where commands run:** every `docker compose ...` command runs from `session_02_airflow_intro/lab`. Every `cat session_03_airflow_dag/...` command runs from the **repo root**.
 
-| Host path | Container path | Purpose |
-|---|---|---|
-| `plugins/` (repo root) | `/opt/airflow/plugins` | shared `dataops_common` package |
-| `session_03_airflow_dag/lab/dags` | `/opt/airflow/dags/session_03` | the 3 session 3 DAGs |
-| `session_03_airflow_dag/lab/data` | `/opt/airflow/data` | partition output |
+---
 
-Restart the stack once so the new mounts take effect:
+## 1. Setup (once)
+
+**Prerequisites:** the session 2 stack is healthy (`docker compose ps`), and ports `8080` (Airflow UI) and `5555` (Flower) are reachable.
+
+**Start the stack** (this also applies the session 3 mounts):
 
 ```bash
 cd session_02_airflow_intro/lab
 docker compose --profile flower up -d
 
-# confirm the DAGs are mounted
-docker compose exec airflow-scheduler ls /opt/airflow/dags/session_03
-# → campaign_alerts.py  campaign_daily_metrics.py  campaign_spend_report.py
+# confirm the DAGs loaded
+docker compose exec airflow-scheduler ls /opt/airflow/dags/session_03 /opt/airflow/dags/session_03_lab
+# session_03:     campaign_daily_metrics.py  campaign_spend_report.py
+# session_03_lab: campaign_alerts.py
 ```
 
-Editing a DAG under `session_03_airflow_dag/lab/dags/` is picked up automatically (the scheduler rescans every ~30s) — no restart needed.
+Editing any DAG under `session_03_airflow_dag/**/dags/` is picked up automatically (~30s rescan) — no restart needed.
 
-## 3. One-time setup
-
-`campaign_daily_metrics` uses a Pool, and optionally a Connection and Variables. Create them once in the Airflow UI (`http://localhost:8080`, `airflow` / `airflow`).
+**Create the Pool and Variables** once, in the UI (`http://localhost:8080`, `airflow` / `airflow`) or via the CLI below:
 
 | Type | Name | Value | Required? |
 |---|---|---|---|
-| Pool | `campaign_db_pool` | 2 slots | **Yes** — the `publish` task won't schedule without it |
-| Variable | `daily_event_volume` | e.g. `30` | No — defaults to 30 |
-| Variable | `daily_budget_usd` | e.g. `5.0` | No — used by `campaign_spend_report`, defaults to 5.0 |
-| Variable | `min_ctr` | e.g. `0.15` | No — used by `campaign_alerts` (the exercise), defaults to 0.15 |
-| Connection | `ad_warehouse` | Conn Type `Postgres`, host `dwh` (anything works) | No — the task logs a fallback if missing |
-| Variable | `slack_webhook_url` | your Slack Incoming Webhook URL | No — alerts just log if missing |
-
-CLI alternative:
+| Pool | `campaign_db_pool` | 2 slots | **Yes** — `publish` won't run without it |
+| Variable | `daily_event_volume` | `30` | No (defaults to 30) |
+| Variable | `daily_budget_usd` | `5.0` | No (used by `campaign_spend_report`) |
+| Variable | `min_ctr` | `0.15` | No (used by your Lab 3 DAG) |
+| Variable | `slack_webhook_url` | your Slack webhook URL | No (alerts just log if missing) |
 
 ```bash
-cd session_02_airflow_intro/lab
 docker compose exec airflow-scheduler airflow pools set campaign_db_pool 2 "Session 3 campaign publish"
 docker compose exec airflow-scheduler airflow variables set daily_event_volume 30
-docker compose exec airflow-scheduler airflow connections add ad_warehouse \
-  --conn-type postgres --conn-host dwh
 ```
 
-To create the `ad_warehouse` Connection from the UI instead: **Admin → Connections → +** → `Conn Id` = `ad_warehouse`, `Conn Type` = `Postgres`, `Host` = `dwh` (or anything) → **Save**.
+> The `homework_db` Connection (a real one, with credentials) shows up in the homework — that's where you actually connect to a database by `conn_id`.
 
-Note what this Connection is actually for: `publish` only calls `BaseHook.get_connection("ad_warehouse")` and reads `.host` for a log line — it never opens a real database connection. You don't need a working Postgres behind it. The point being demonstrated is the pattern itself: look up credentials by `conn_id`, never hardcode them in the DAG.
+On the optional Slack alert:
 
-### Setting up `slack_webhook_url` (optional — enables real Slack alerts)
+- **`slack_webhook_url`** turns the log-only alerts into real Slack messages. To get a URL: Slack → [api.slack.com/apps](https://api.slack.com/apps) → your app → **Incoming Webhooks** → **Add New Webhook to Workspace** → pick a channel. Then `airflow variables set slack_webhook_url 'https://hooks.slack.com/services/...'`. Keep the URL in the Variable only — never in code.
 
-Without this Variable, `on_failure_callback` and `sla_miss_callback` just log the message they would have sent — the DAGs run the same either way. To see a real alert land in Slack:
+---
 
-1. In Slack: **create an app** (or reuse one) at [api.slack.com/apps](https://api.slack.com/apps) → **Incoming Webhooks** → toggle **Activate Incoming Webhooks** on → **Add New Webhook to Workspace** → pick a channel → **Allow**.
-2. Copy the generated URL (`https://hooks.slack.com/services/...`).
-3. Set it as an Airflow Variable — **Admin → Variables → +** → `Key` = `slack_webhook_url`, `Val` = the URL you copied → **Save**. Or via CLI:
+## 2. Run the reference pipeline first
+
+Labs 1–3 all read the data this pipeline produces, so run it once for a date.
+
+In the UI, unpause `session_03_campaign_daily_metrics` and trigger it for **2024-02-10** (or via CLI):
 
 ```bash
-docker compose exec airflow-scheduler airflow variables set slack_webhook_url 'https://hooks.slack.com/services/...'
+docker compose exec airflow-scheduler airflow dags trigger session_03_campaign_daily_metrics -e 2024-02-10
 ```
 
-The URL only lives in the Airflow Variable — never put it in DAG code or commit it to the repo.
-
-## 4. Run & verify
-
-1. In the UI, unpause `campaign_daily_metrics` and trigger a run (or pick a logical date).
-2. Watch `ingest → rollup → publish → reconcile` go green in Graph view.
-3. Check the partition output on the host:
+Watch `ingest → rollup → publish → reconcile` go green. Then check the output (from the repo root):
 
 ```bash
-cat session_03_airflow_dag/lab/data/published/campaign_metrics/dt=*/data.json
-# → one row per campaign: impressions, clicks, spend_usd, ctr
+cat session_03_airflow_dag/data/published/campaign_metrics/dt=2024-02-10/data.json
+# → 3 campaigns, each with impressions / clicks / spend_usd / ctr
 ```
 
-4. Enable `campaign_spend_report` — its `wait_for_metrics` sensor stays in `up_for_reschedule` until `campaign_daily_metrics` finishes that date, then `flag_over_budget` runs.
+---
 
-## 5. DAGs in this lab
+## 3. Lab 1 — Idempotency, backfill & XCom
 
-| DAG | What it shows |
-|---|---|
-| `campaign_daily_metrics` | Idempotent partition writes, deterministic data, retries + timeouts, SLA + callbacks, Pool, Variable, Connection |
-| `campaign_spend_report` | Cross-DAG dependency via `ExternalTaskSensor` (reschedule mode) |
-| `campaign_alerts` | **Starter for you to finish** — see the Exercise below |
+**Goal:** see why the pipeline is safe to rerun and backfill.
 
-## 6. Exercise — finish `campaign_alerts`
+1. You already ran `2024-02-10` above. Note the `reconcile` log line: `30 events == 30 impressions`.
+2. **Rerun the same day** — trigger `2024-02-10` again. The output is still **3 campaigns / 30 impressions**, not doubled. That's idempotency: the load overwrites the day's partition instead of appending.
+3. **Backfill three days:**
+   ```bash
+   docker compose exec airflow-scheduler airflow dags backfill session_03_campaign_daily_metrics -s 2024-02-01 -e 2024-02-03 --reset-dagruns
+   ```
+   Check that each day got its own partition, with its own data:
+   ```bash
+   cat session_03_airflow_dag/data/published/campaign_metrics/dt=2024-02-01/data.json
+   cat session_03_airflow_dag/data/published/campaign_metrics/dt=2024-02-02/data.json
+   cat session_03_airflow_dag/data/published/campaign_metrics/dt=2024-02-03/data.json
+   ```
+4. **XCom:** in the Grid view, click the `ingest` task → **XCom** tab. It pushed a single number (the event count) — not the whole list of events.
 
-`campaign_alerts.py` is a starter DAG with the wiring done and the logic left as
-TODOs. Your job: complete it so it flags campaigns whose CTR is below a
-threshold, downstream of `campaign_daily_metrics`. Read `campaign_spend_report.py`
-first — it is the same pattern with a different metric.
+**Think about:**
+- Why is writing to a `dt=YYYY-MM-DD` partition what makes backfill safe?
+- XCom is stored in the metadata DB. Why push only a count/path through it, never the full list of events?
 
-Steps (each maps to a `# TODO` in the file):
+---
+
+## 4. Lab 2 — Cross-DAG dependency & sensor
+
+**Goal:** see one DAG wait for another. `session_03_campaign_spend_report` waits for `session_03_campaign_daily_metrics` to finish the same day before it runs.
+
+1. Enable both DAGs.
+2. Trigger `session_03_campaign_spend_report` for **2024-02-11** — a day the metrics pipeline hasn't run yet:
+   ```bash
+   docker compose exec airflow-scheduler airflow dags trigger session_03_campaign_spend_report -e 2024-02-11
+   ```
+3. Its `wait_for_metrics` task sits in **`up_for_reschedule`** — waiting, without holding a worker slot, without failing.
+4. Now trigger the metrics pipeline for the **same day** and let `reconcile` finish:
+   ```bash
+   docker compose exec airflow-scheduler airflow dags trigger session_03_campaign_daily_metrics -e 2024-02-11
+   ```
+5. `wait_for_metrics` passes on its own, then `flag_over_budget` runs and writes `reports/campaign_spend/dt=2024-02-11`.
+
+**Think about:**
+- Why point the sensor at the **last** task (`reconcile`) instead of the first?
+- Why is `mode="reschedule"` better than the default `poke` when the wait can be long?
+
+---
+
+## 5. Lab 3 — Build the alert DAG
+
+**This is the one you write.** `session_03_campaign_alerts` is a starter DAG — the wiring (sensor, task, dependency) is done; the logic in `flag_low_ctr` is left as 7 `# TODO`s. Finish it so it flags campaigns whose CTR is below a threshold.
+
+Read [`../demo/dags/campaign_spend_report.py`](../demo/dags/campaign_spend_report.py) first — it's the same shape with a different metric.
+
+The 7 TODOs, in order:
 
 1. Read the Variable `min_ctr` (default `0.15`) as a float.
-2. Read the published `campaign_metrics` partition for `logical_date` with `read_partition("published", "campaign_metrics", logical_date)`.
-3. Keep the campaigns whose `ctr` is below `min_ctr`, and sum their `spend_usd` (the "wasted" spend).
-4. Build a report dict: `date`, `min_ctr`, `low_ctr_campaigns` (list of names), `wasted_spend_usd`.
-5. Write it to a partition with `write_partition("reports", "campaign_low_ctr", logical_date, [report])` — one row, overwrites on rerun (idempotent).
-6. Log the report with `log.info(...)` and return it.
-7. Wire the dependency so `flag_low_ctr` runs only after `wait_for_metrics` (`wait_for_metrics >> alert`).
+2. Read the published partition: `read_partition("published", "campaign_metrics", logical_date)`.
+3. Keep the campaigns with `ctr < min_ctr`, and sum their `spend_usd` (the "wasted" spend).
+4. Build the report dict: `date`, `min_ctr`, `low_ctr_campaigns` (list of names), `wasted_spend_usd`.
+5. Write it: `write_partition("reports", "campaign_low_ctr", logical_date, [report])` — one row, overwrites on rerun (idempotent).
+6. `log.info(...)` the report and return it.
+7. Wire the dependency: `wait_for_metrics >> alert`.
 
-Test it:
+**Test it:**
 
-1. Run `campaign_daily_metrics` for a date first (it produces the metrics you read).
-2. Unpause `campaign_alerts`, trigger the same date.
-3. Check the output on the host:
-   ```bash
-   cat session_03_airflow_dag/lab/data/reports/campaign_low_ctr/dt=*/data.json
-   ```
+```bash
+docker compose exec airflow-scheduler airflow dags trigger session_03_campaign_alerts -e 2024-02-10
+cat session_03_airflow_dag/data/reports/campaign_low_ctr/dt=2024-02-10/data.json
+```
 
-Acceptance criteria:
+**Done when:**
 - The DAG runs green (no `NotImplementedError`).
 - `flag_low_ctr` runs only after `wait_for_metrics` succeeds.
-- With the default sample data, `brand_awareness` (CTR 0.10) is flagged; `prospecting` (0.30) and `retargeting` (0.50) are not.
-- Triggering the same date twice leaves exactly one row in the partition (idempotent).
+- With the default data, only `brand_awareness` (CTR 0.10) is flagged — `prospecting` (0.30) and `retargeting` (0.50) are not.
+- Triggering the same day twice leaves exactly one row in the partition (idempotent).
 
-## 7. Demo — a real alert from a real failure
+---
 
-Fixed, single-path script, run against the real reference pipeline — not a throwaway DAG. It doubles as the answer to "why does `reconcile` even exist?": you corrupt the exact thing it guards, then watch it catch the corruption, retry, fail, and alert Slack — for real. Every step below has been run end to end.
-
-> **Use `airflow dags trigger`, NOT `airflow dags backfill`.** Clearing a task inside a *backfill* run is **not** picked up by the scheduler — the task sits stuck with no status and the demo dies. A triggered (manual) run is scheduler-managed, so a cleared task reruns normally. This is the one thing that will break the demo if you get it wrong.
-
-**Before class:** `slack_webhook_url` Variable set (section 3) with a **real** webhook, and the Slack channel open next to the Airflow UI (Grid view of `campaign_daily_metrics`). The demo uses date `2025-06-01` — one no exercise touches. Run the `docker compose exec` commands from `session_02_airflow_intro/lab`.
-
-1. **Run the pipeline clean** for the date:
-   ```bash
-   docker compose exec airflow-scheduler airflow dags trigger campaign_daily_metrics -e 2025-06-01
-   ```
-   In Grid view the new run goes all green (`ingest → rollup → publish → reconcile`) in ~40s.
-
-2. **Corrupt the published partition** — simulating a downstream process dropping one impression *after* `publish` ran. From the repo root:
-   ```bash
-   python3 - <<'PY'
-   import json, pathlib
-   p = pathlib.Path("session_03_airflow_dag/lab/data/published/campaign_metrics/dt=2025-06-01/data.json")
-   rows = json.loads(p.read_text())
-   rows[0]["impressions"] -= 1
-   p.write_text(json.dumps(rows, indent=2, sort_keys=True))
-   print("corrupted:", rows[0]["campaign"], "→ impressions now", rows[0]["impressions"])
-   PY
-   ```
-   Only `published` changes; `raw` and `curated` stay correct — `published` is the layer `reconcile` checks.
-
-3. **Clear only `reconcile`.** In the UI: Grid view → the `2025-06-01` run → click the `reconcile` box → **Clear** → confirm. (This is also the live "clear one task, only that task reruns" example.) CLI equivalent:
-   ```bash
-   docker compose exec airflow-scheduler airflow tasks clear campaign_daily_metrics -t reconcile -s 2025-06-01 -e 2025-06-01 -y
-   ```
-
-4. `reconcile` reruns, recomputes from the corrupted partition, the counts don't match → it raises, and the task log shows the real error:
-   ```
-   ValueError: Reconciliation failed for ad_events/2025-06-01: source=30, target=29
-   ```
-
-5. **Narrate the retry window — don't wait in silence.** `reconcile` inherits `retries=2, retry_delay=1min`: it fails (state `up_for_retry`), waits ~1 min, retries, fails, retries once more, fails — **~2 minutes total** — then gives up (`failed`). Point at the attempt history in the UI; this is the retry behavior every task in the DAG has.
-
-6. On the **final** failure `on_failure_callback` fires and posts to Slack:
-   ```
-   🔴 *campaign_daily_metrics* › `reconcile` failed
-   Run: `manual__2025-06-01T00:00:00+00:00` | Date: `2025-06-01T00:00:00+00:00`
-   ```
-   You can confirm it fired in the `reconcile` task log — look for a `{notifications.py}` line (a successful post logs nothing; a failed post logs `Slack post failed (non-fatal): ...`).
-
-7. **If no Slack message arrives**, read the `reconcile` task log (not the DAG health):
-   - `slack_webhook_url not set — skipping` → Variable missing/empty; set it (section 3), redo step 3.
-   - `Slack post failed (non-fatal): ...` → webhook URL is wrong, revoked, or the app/channel was removed; recreate it (section 3), redo step 3.
-
-8. **Fix the data** — clear `publish` (it reruns `reconcile` downstream too):
-   ```bash
-   docker compose exec airflow-scheduler airflow tasks clear campaign_daily_metrics -t "publish|reconcile" -s 2025-06-01 -e 2025-06-01 -y
-   ```
-   `publish` rewrites the partition from `curated` (idempotent overwrite), `reconcile` passes, the run is green again. Say it out loud: recovering from a bad state here is just "rerun it" — that is the payoff of idempotency, not luck.
-
-**SLA alerts (`sla_miss_callback`) are a separate mechanism and not part of this demo**: Airflow only evaluates SLA misses on *scheduled* runs, never on manual triggers or backfills — there's no way to force one on demand. Walk through the `sla=timedelta(...)` config and `notify_on_sla_miss` code instead of trying to trigger it live.
-
-## 8. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `campaign_*` DAGs missing in UI | Stack not restarted after mounts were added | `docker compose --profile flower up -d` in `session_02_airflow_intro/lab` |
+| `session_03_*` DAGs missing in UI | Stack not restarted after mounts were added | `docker compose --profile flower up -d` in `session_02_airflow_intro/lab` |
 | `ModuleNotFoundError: dataops_common` | Plugins mount not applied | Confirm `../../plugins` is mounted; restart the stack |
-| `publish` task stuck, never runs | Pool `campaign_db_pool` doesn't exist | Create it (section 3) |
-| Import error on a DAG | Editing while the scheduler rescans | Wait ~30s; check the DAG's import-error banner in the UI |
-| No data under `lab/data/` | Data volume not mounted | Confirm `session_03_airflow_dag/lab/data` maps to `/opt/airflow/data` |
+| `publish` stuck, never runs | Pool `campaign_db_pool` doesn't exist | Create it (section 1) |
+| Import error on a DAG | Edited while the scheduler was rescanning | Wait ~30s; check the import-error banner in the UI |
+| No data under `data/` | Data volume not mounted | Confirm `session_03_airflow_dag/data` maps to `/opt/airflow/data` |

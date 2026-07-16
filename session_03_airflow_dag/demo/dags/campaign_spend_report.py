@@ -26,11 +26,12 @@ default_args = {
 
 
 @dag(
-    dag_id="campaign_spend_report",
+    dag_id="session_03_campaign_spend_report",
     description="Daily spend report — runs after campaign_daily_metrics.reconcile",
     schedule="@daily",
     start_date=datetime(2024, 1, 1),
     catchup=False,
+    max_active_runs=1,
     default_args=default_args,
     tags=["session-03", "ads", "cross-dag"],
 )
@@ -40,7 +41,7 @@ def campaign_spend_report():
     # when the wait can be long.
     wait_for_metrics = ExternalTaskSensor(
         task_id="wait_for_metrics",
-        external_dag_id="campaign_daily_metrics",
+        external_dag_id="session_03_campaign_daily_metrics",
         external_task_id="reconcile",
         mode="reschedule",
         poke_interval=30,

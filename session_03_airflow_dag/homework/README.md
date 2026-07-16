@@ -50,9 +50,9 @@ scheduler picks it up within ~30s.
 
 ## 2. Your task
 
-Write a DAG `genre_daily_stats` that, for each logical date, reads `plays` of that
-day, joins to `tracks`, aggregates per genre, and writes the result into
-`daily_genre_stats`. Then reconcile.
+Write a DAG `session_03_genre_daily_stats` that, for each logical date, reads
+`plays` of that day, joins to `tracks`, aggregates per genre, and writes the result
+into `daily_genre_stats`. Then reconcile.
 
 Suggested shape: `transform_load >> reconcile` (or split extract/transform/load if
 you prefer). Connect to the database with
@@ -73,7 +73,9 @@ you prefer). Connect to the database with
 
 ### How to build it — hints
 
-**Which operator?** Use the TaskFlow `@task` decorator with a `PostgresHook`, **not** `SQLExecuteQueryOperator`. You need to run a DELETE and an INSERT in *one* transaction and roll back on error — that transaction control is much easier from Python with a hook than from a SQL operator. Scaffold the DAG the same way `../lab/dags/campaign_daily_metrics.py` does (`@dag`, `default_args`, `@task`), so read that file first.
+**Which operator?** For this homework use the TaskFlow `@task` decorator with a `PostgresHook`, so you drive the DELETE + INSERT transaction (commit once, roll back on error) explicitly in Python and see every step. Scaffold the DAG the same way `../demo/dags/campaign_daily_metrics.py` does (`@dag`, `default_args`, `@task`), so read that file first.
+
+> **Heads-up for session 4.** Doing the transaction by hand here makes the mechanics visible, but it is *not* the pattern you'll standardise on. Session 4 moves SQL out of Python entirely — a `SQLExecuteQueryOperator` running an external `.sql` file with `BEGIN … COMMIT` inside it gives you the same atomic DELETE + INSERT with no hand-written connection code. Treat this hook version as the "see it work manually" step before that.
 
 **Getting `{{ ds }}` inside a task:** name a parameter `ds` and Airflow injects the run's date as a `"YYYY-MM-DD"` string — no manual templating needed:
 
@@ -109,8 +111,8 @@ finally:
 
 1. **Runs clean:** trigger for `2024-03-01`, confirm `daily_genre_stats` has 3 rows (pop / rock / jazz) and reconcile passes.
 2. **Idempotent:** trigger the same date again — still 3 rows for that day, not 6.
-3. **Backfill:** `docker compose exec airflow-scheduler airflow dags backfill genre_daily_stats -s 2024-03-01 -e 2024-03-05 --reset-dagruns` → one set of rows per day, each with that day's data.
-4. **Fault tolerance:** clear one task in the UI → only that task reruns.
+3. **Backfill:** `docker compose exec airflow-scheduler airflow dags backfill session_03_genre_daily_stats -s 2024-03-01 -e 2024-03-05 --reset-dagruns` → one set of rows per day, each with that day's data.
+4. **Fault tolerance:** on a **triggered** run (from step 1, not a `backfill` run), clear one task in the UI → only that task reruns. (Clearing a task inside a `backfill` run isn't rescheduled — use a manual trigger.)
 
 Inspect results:
 

@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
-from airflow.hooks.base import BaseHook
 from airflow.models import Variable
 
 from dataops_common.notifications import notify_on_failure, notify_on_sla_miss
@@ -26,7 +25,7 @@ default_args = {
 
 
 @dag(
-    dag_id="campaign_daily_metrics",
+    dag_id="session_03_campaign_daily_metrics",
     description="Idempotent daily ad-campaign metrics — safe to rerun and backfill",
     schedule="@daily",
     start_date=datetime(2024, 1, 1),
@@ -55,14 +54,9 @@ def campaign_daily_metrics():
 
     @task(pool="campaign_db_pool", sla=timedelta(minutes=45))
     def publish(_campaign_count: int, logical_date: datetime | None = None) -> int:
-        try:
-            conn = BaseHook.get_connection("ad_warehouse")
-            target = conn.host or "local-store"
-        except Exception:
-            target = "local-store (ad_warehouse connection not set)"
         metrics = read_partition("curated", "campaign_metrics", logical_date)
         write_partition("published", "campaign_metrics", logical_date, metrics)
-        log.info("Published %d campaign rows to %s", len(metrics), target)
+        log.info("Published %d campaign rows for %s", len(metrics), logical_date.date())
         return len(metrics)
 
     @task
@@ -73,7 +67,10 @@ def campaign_daily_metrics():
         reconcile_counts(raw_events, total_impressions, label=f"ad_events/{logical_date.date()}")
         log.info("Reconciliation OK: %d events == %d impressions", raw_events, total_impressions)
 
-    reconcile(publish(rollup(ingest())))
+    events = ingest()
+    metrics = rollup(events)
+    published = publish(metrics)
+    reconcile(published)
 
 
 campaign_daily_metrics()
