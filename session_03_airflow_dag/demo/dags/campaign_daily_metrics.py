@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from multiprocessing import pool
 
 from airflow.decorators import dag, task
 from airflow.models import Variable
@@ -12,6 +13,7 @@ from airflow.models import Variable
 from dataops_common.notifications import notify_on_failure, notify_on_sla_miss
 from dataops_common.sample_data import aggregate_campaigns, generate_ad_events
 from dataops_common.storage import read_partition, reconcile_counts, write_partition
+from airflow.operators.bash import BashOperator
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +47,7 @@ def campaign_daily_metrics():
         log.info("Ingested %d ad events for %s", len(events), logical_date.date())
         return len(events)
 
-    @task
+    @task(pool="reporting_pool")
     def rollup(_event_count: int, logical_date: datetime | None = None) -> int:
         events = read_partition("raw", "ad_events", logical_date)
         metrics = aggregate_campaigns(events)
@@ -66,11 +68,21 @@ def campaign_daily_metrics():
         total_impressions = sum(row["impressions"] for row in published)
         reconcile_counts(raw_events, total_impressions, label=f"ad_events/{logical_date.date()}")
         log.info("Reconciliation OK: %d events == %d impressions", raw_events, total_impressions)
+        
+    @task.bash
+    def trigger_downstream_dag(logical_date: datetime):
+        return "airflow dags trigger session_03_campaign_spend_report -e {{ ds }}"
+    
 
     events = ingest()
     metrics = rollup(events)
     published = publish(metrics)
-    reconcile(published)
+    recon = reconcile(published)
+    
+    # Just note in class. 
+    # If you want to trigger an DAG, Highly recommend using below operator
+    # https://airflow.apache.org/docs/apache-airflow/2.3.4/_api/airflow/operators/trigger_dagrun/index.html 
+    # recon >> trigger_downstream_dag()
 
 
 campaign_daily_metrics()

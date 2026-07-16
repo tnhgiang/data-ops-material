@@ -51,8 +51,12 @@ x-airflow-common:
   # In order to add custom dependencies or upgrade provider packages you can use your extended image.
   # Comment the image line, place your Dockerfile in the directory where you placed the docker-compose.yaml
   # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
-  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.9.3}
-  # build: .
+  # Custom image (base Airflow + DuckDB + provider). The Dockerfile lives with the
+  # session that needs it (session 4); this shared stack just builds from there.
+  # image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.9.3}
+  build:
+    context: ../../session_04_sql_dwh
+    dockerfile: Dockerfile
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -70,7 +74,14 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
+    # DuckDB is baked into the image (see Dockerfile), so it is NOT reinstalled here
+    # on every start. This stays a pass-through for any ad-hoc extra packages.
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    # Session 4 warehouse file (DuckDB, in-process)
+    DATAOPS_DWH_PATH: /opt/airflow/db/dwh.duckdb
+    # Session 4 DuckDB connection, baked in so no manual setup is needed. The DAGs
+    # reach the warehouse through this conn_id via SQLExecuteQueryOperator.
+    AIRFLOW_CONN_DUCKDB_DEFAULT: '{"conn_type": "duckdb", "host": "/opt/airflow/db/dwh.duckdb"}'
     AIRFLOW__WEBSERVER__SHOW_TRIGGER_FORM_IF_NO_PARAMS: 'true'
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file
@@ -87,6 +98,11 @@ x-airflow-common:
     - ../../session_03_airflow_dag/data:/opt/airflow/data
     # Session 3 homework — student submissions land here
     - ../../session_03_airflow_dag/homework/submissions:/opt/airflow/dags/homework
+    # Session 4 — reference demo DAG, student lab DAGs, DuckDB warehouse file
+    - ../../session_04_sql_dwh/demo/dags:/opt/airflow/dags/session_04
+    - ../../session_04_sql_dwh/lab/dags:/opt/airflow/dags/session_04_lab
+    - ../../session_04_sql_dwh/homework/submissions:/opt/airflow/dags/session_04_homework
+    - ../../session_04_sql_dwh/db:/opt/airflow/db
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -251,7 +267,8 @@ services:
         fi
         mkdir -p /sources/logs /sources/dags /sources/plugins
         chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
-        exec /entrypoint airflow version
+        # Session 4: 1-slot pool so DuckDB (single-writer) is never written concurrently.
+        exec /entrypoint bash -c "airflow pools set duckdb_pool 1 'Session 4: DuckDB single-writer' && airflow version"
     # yamllint enable rule:line-length
     environment:
       <<: *airflow-common-env
