@@ -21,7 +21,7 @@ The pipeline runs on the **same Airflow stack you built in session 2** — sessi
 
 | DAG | Location | Role |
 |---|---|---|
-| `session_03_campaign_daily_metrics` | `demo/` | The reference pipeline: `ingest → rollup → publish → reconcile`, with every operational concept above. Mentor-run — see [demo/README.md](demo/README.md). |
+| `session_03_campaign_daily_metrics` | `demo/` | The reference pipeline: `ingest → rollup → publish → reconcile`, carrying most of the operational concepts above. Mentor-run — see [demo/README.md](demo/README.md). |
 | `session_03_campaign_spend_report` | `demo/` | A downstream report owned by finance; waits for the metrics pipeline that date, then flags over-budget campaigns. |
 | `session_03_campaign_alerts` | `lab/` | A **starter DAG you complete** — flags low-CTR campaigns. See the Exercise in [lab/README.md](lab/README.md). |
 

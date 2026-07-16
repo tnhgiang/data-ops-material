@@ -110,7 +110,7 @@ finally:
 ## 3. Test it yourself
 
 1. **Runs clean:** trigger for `2024-03-01`, confirm `daily_genre_stats` has 3 rows (pop / rock / jazz) and reconcile passes.
-2. **Idempotent:** trigger the same date again — still 3 rows for that day, not 6.
+2. **Idempotent:** rerun the same date by **clearing** its run (a second `dags trigger` for the same date is refused as `DagRunAlreadyExists`) — still 3 rows for that day, not 6.
 3. **Backfill:** `docker compose exec airflow-scheduler airflow dags backfill session_03_genre_daily_stats -s 2024-03-01 -e 2024-03-05 --reset-dagruns` → one set of rows per day, each with that day's data.
 4. **Fault tolerance:** on a **triggered** run (from step 1, not a `backfill` run), clear one task in the UI → only that task reruns. (Clearing a task inside a `backfill` run isn't rescheduled — use a manual trigger.)
 

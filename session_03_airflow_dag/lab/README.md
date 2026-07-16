@@ -80,7 +80,11 @@ cat session_03_airflow_dag/data/published/campaign_metrics/dt=2024-02-10/data.js
 **Goal:** see why the pipeline is safe to rerun and backfill.
 
 1. You already ran `2024-02-10` above. Note the `reconcile` log line: `30 events == 30 impressions`.
-2. **Rerun the same day** — trigger `2024-02-10` again. The output is still **3 campaigns / 30 impressions**, not doubled. That's idempotency: the load overwrites the day's partition instead of appending.
+2. **Rerun the same day.** You can't re-`trigger` a date that already ran (Airflow refuses it: `DagRunAlreadyExists`), so rerun it the real way — in the Grid view, select the `2024-02-10` run and click **Clear**, or:
+   ```bash
+   docker compose exec airflow-scheduler airflow tasks clear session_03_campaign_daily_metrics -s 2024-02-10 -e 2024-02-10 -y
+   ```
+   It reruns and the output is still **3 campaigns / 30 impressions**, not doubled. That's idempotency: the load overwrites the day's partition instead of appending. (A rerun in production is a Clear, not a fresh trigger — same muscle memory.)
 3. **Backfill three days:**
    ```bash
    docker compose exec airflow-scheduler airflow dags backfill session_03_campaign_daily_metrics -s 2024-02-01 -e 2024-02-03 --reset-dagruns
@@ -148,7 +152,7 @@ cat session_03_airflow_dag/data/reports/campaign_low_ctr/dt=2024-02-10/data.json
 - The DAG runs green (no `NotImplementedError`).
 - `flag_low_ctr` runs only after `wait_for_metrics` succeeds.
 - With the default data, only `brand_awareness` (CTR 0.10) is flagged — `prospecting` (0.30) and `retargeting` (0.50) are not.
-- Triggering the same day twice leaves exactly one row in the partition (idempotent).
+- Re-running the same day (Clear the run — a second `trigger` for the same date is refused) leaves exactly one row in the partition (idempotent).
 
 ---
 
