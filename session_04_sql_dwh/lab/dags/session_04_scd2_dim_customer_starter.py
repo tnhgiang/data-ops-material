@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from airflow.models.dag import DAG
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
-
 from dataops_common.notifications import notify_on_failure  # noqa: F401 (for TODO #1)
 
 default_args = {
@@ -26,17 +25,12 @@ with DAG(
     template_searchpath="/opt/airflow/dags/session_04_lab/sql/scd2_dim_customer_starter",
     tags=["session-04", "lab", "exercise", "scd2"],
 ) as dag:
-
     opts = {"split_statements": True, "autocommit": True}
 
-    create_schema = SQLExecuteQueryOperator(
-        task_id="create_schema", sql="create_scd2.sql", **opts
-    )
+    create_schema = SQLExecuteQueryOperator(task_id="create_schema", sql="create_scd2.sql", **opts)
     load_snapshot = SQLExecuteQueryOperator(
         task_id="load_snapshot", sql="load_snapshot.sql", **opts
     )
-    apply_scd2 = SQLExecuteQueryOperator(
-        task_id="apply_scd2", sql="apply_scd2.sql", **opts
-    )
+    apply_scd2 = SQLExecuteQueryOperator(task_id="apply_scd2", sql="apply_scd2.sql", **opts)
 
     create_schema >> load_snapshot >> apply_scd2

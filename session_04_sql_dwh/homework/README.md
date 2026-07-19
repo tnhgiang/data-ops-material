@@ -1,29 +1,35 @@
-# Session 4 Homework — Deduplication & a Data-Quality Gate
+# Session 4 Homework — CDC with MERGE, and Slowly-Changing History
 
-Two take-home tasks on the same DuckDB warehouse you used in the lab. Both are
-patterns interviewers reach for constantly: making an append-only source
-idempotent by **deduplicating to the latest version**, and guarding a table with a
-**data-quality suite** that fails the pipeline instead of shipping bad data.
+Two take-home tasks on the same DuckDB warehouse from the lab. Both are the warehouse
+patterns interviewers reach for and the session's headline skill — **`MERGE INTO`** — applied
+to the two jobs it exists for:
 
-You run them on the same Airflow stack from session 2. Put your DAGs (and their
-`.sql` files) in `session_04_sql_dwh/homework/submissions/` — that folder is mounted
-into Airflow at `/opt/airflow/dags/session_04_homework`, so the scheduler picks them
-up within ~30s.
+- **Homework 1** — apply a **change-data-capture (CDC) stream** into a current-state table with
+  a single `MERGE` (inserts, updates, and deletes/tombstones), the way real ingestion lands.
+- **Homework 2** — keep **slowly-changing history** with SCD Type 2, then *use* it: answer
+  "what did this customer look like on date X" with a **point-in-time query**.
 
-> To inspect your results, you don't need `docker exec` at all — the warehouse is a
-> plain file on your **host** (`session_04_sql_dwh/db/dwh.duckdb`). Open it directly
-> in DBeaver or any DuckDB client; see
+The lab only ever `overwrote` a slice (`DELETE`-by-date + `INSERT`). These push into the writes
+that *accumulate*: a `MERGE` that reconciles a batch of changes against what is already there.
+
+You run them on the same Airflow stack from session 2. Put your DAGs (and their `.sql` files) in
+`session_04_sql_dwh/homework/submissions/` — that folder is mounted into Airflow at
+`/opt/airflow/dags/session_04_homework`, so the scheduler picks them up within ~30s.
+
+> **Inspecting results.** The warehouse is a plain file on your **host**
+> (`session_04_sql_dwh/db/dwh.duckdb`) — open it in **DBeaver** or any DuckDB client (read-only)
+> and query directly; see
 > [../README.md](../README.md#querying-the-warehouse-from-dbeaver-or-any-duckdb-client-on-your-host).
+> Disconnect before triggering a DAG — DuckDB is single-writer.
 
-Build your DAGs the same way as the lab: **operators + external `.sql` files**, not
-raw Python connections. Reach the warehouse through the baked-in `duckdb_default`
-connection, keep every DAG on the `duckdb_pool` pool (DuckDB is single-writer), and
-put the SQL in a sibling `sql/` folder pointed to by `template_searchpath`:
+Build your DAGs the same way as the lab: **operators + external `.sql` files**, not raw Python
+connections. Reach the warehouse through the baked-in `duckdb_default` connection, keep every DAG
+on the `duckdb_pool` pool (DuckDB is single-writer), and put the SQL in a sibling `sql/` folder
+pointed to by `template_searchpath`:
 
 ```python
 from airflow.providers.common.sql.operators.sql import (
     SQLExecuteQueryOperator, SQLCheckOperator,
-    SQLColumnCheckOperator, SQLTableCheckOperator,
 )
 
 default_args = {"conn_id": "duckdb_default", "pool": "duckdb_pool", ...}
@@ -32,147 +38,201 @@ default_args = {"conn_id": "duckdb_default", "pool": "duckdb_pool", ...}
 #                           split_statements=True, autocommit=True)
 ```
 
-Wrap any DELETE+INSERT in `BEGIN … COMMIT` inside the `.sql` file for atomicity, and
+Wrap any multi-statement write in `BEGIN … COMMIT` inside the `.sql` file for atomicity, and
 template the run date with `{{ ds }}`.
 
 ---
 
-## Homework 1 — Turn a raw change stream into a clean table (required)
+## Homework 1 — Apply a change stream with `MERGE` (required)
 
-This is the shape of real change-data-capture (CDC) ingestion: a source system emits
-a row for every **change** — an insert, an update, or a delete — and those events
-arrive duplicated (retries) and out of order (late). Each event carries an operation
-flag `op` ∈ {`I`, `U`, `D`}. Your job is to collapse that noisy `bronze.events_raw`
-into a clean `silver.events` holding **the current state**: exactly one row per
-`event_id` — its newest version — and **no row at all for a key whose latest event is
-a delete** (a "tombstone").
+A source system emits one row per **change** — an insert, an update, or a delete — each tagged
+with an operation flag `op ∈ {I, U, D}`. Those events arrive **duplicated** (retries) and
+**out of order** (late updates). Your job is to keep `silver.events` as the **current state**:
+one row per `event_id` (its newest version), and **no row for a key whose latest event is a
+delete** (a *tombstone*). Real ingestion does this incrementally with one `MERGE` per batch —
+not by rebuilding the table — so that is what you will write.
 
-### The source (generate it deterministically in your DAG)
+### The source (given — seed it deterministically in your DAG)
 
-Seed `bronze.events_raw` per run date with this exact shape, so your run is
-reproducible and the duplicates, late update, and delete are real:
+`load_changes.sql` seeds one day's change batch. Generated from `{{ ds }}` (and `range()`), so
+the batch — its duplicates, late update, and deletes — is reproducible and at real scale
+(~135k change rows/day):
 
-```python
-def raw_events_for(ds: str) -> list[tuple]:
-    # (event_id, user_id, amount, op, updated_at)
-    return [
-        (1, 10, 100.0, "I", f"{ds} 09:00:00"),
-        (2, 11, 200.0, "I", f"{ds} 09:05:00"),
-        (1, 10, 100.0, "I", f"{ds} 09:10:00"),   # duplicate insert of event 1 (a retry)
-        (2, 11, 250.0, "U", f"{ds} 11:00:00"),   # late UPDATE of event 2 (amount changed)
-        (3, 12, 300.0, "I", f"{ds} 12:00:00"),
-        (3, 12, 300.0, "D", f"{ds} 12:30:00"),   # event 3 later DELETED (tombstone)
-    ]
+```sql
+BEGIN;
+DELETE FROM bronze.events_raw WHERE event_date = DATE '{{ ds }}';
+
+INSERT INTO bronze.events_raw
+-- 100k inserts
+SELECT i, 1000 + (i % 5000), ROUND(10 + (i % 500) * 1.5, 2),
+       'I', TIMESTAMP '{{ ds }} 09:00:00', DATE '{{ ds }}'
+FROM range(1, 100001) AS t(i)
+UNION ALL  -- 20k late UPDATEs (amount +100, a later timestamp) to keys 1..20000
+SELECT i, 1000 + (i % 5000), ROUND(10 + (i % 500) * 1.5 + 100, 2),
+       'U', TIMESTAMP '{{ ds }} 15:00:00', DATE '{{ ds }}'
+FROM range(1, 20001) AS t(i)
+UNION ALL  -- 10k DELETEs (tombstones) of keys 90001..100000
+SELECT i, 1000 + (i % 5000), NULL,
+       'D', TIMESTAMP '{{ ds }} 18:00:00', DATE '{{ ds }}'
+FROM range(90001, 100001) AS t(i)
+UNION ALL  -- 5k duplicate insert retries of keys 1..5000 (an at-least-once source)
+SELECT i, 1000 + (i % 5000), ROUND(10 + (i % 500) * 1.5, 2),
+       'I', TIMESTAMP '{{ ds }} 09:00:00', DATE '{{ ds }}'
+FROM range(1, 5001) AS t(i);
+COMMIT;
 ```
 
-Columns: `bronze.events_raw(event_id BIGINT, user_id INTEGER, amount DOUBLE, op VARCHAR, updated_at TIMESTAMP, event_date DATE)`.
-Set `event_date = ds` when you load, and load it idempotently (replace the date's rows).
+Schema: `bronze.events_raw(event_id BIGINT, user_id INTEGER, amount DOUBLE, op VARCHAR, updated_at TIMESTAMP, event_date DATE)`
+and the target `silver.events(event_id BIGINT PRIMARY KEY, user_id INTEGER, amount DOUBLE, updated_at TIMESTAMP)`.
 
 ### Your task
 
-Write a DAG `session_04_events_dedup` that, for each run date, loads the raw events, then builds
-`silver.events` as the current state: latest row per `event_id`, tombstones removed.
+Write a DAG `session_04_events_cdc` with steps `load_changes → apply_cdc → reconcile` that, per
+run date, seeds the batch and **applies it with a single `MERGE`**.
+
+The catch that makes CDC different from the demo's load: **a `MERGE` can match at most one source
+row per target key**, but the batch has several rows for the same `event_id` (the retry, the late
+update). So you must **collapse the batch to the latest event per key first**, then merge that:
+
+```sql
+-- apply_cdc.sql
+BEGIN;
+
+-- 1) reduce the batch to ONE row per key (the newest event) BEFORE merging
+CREATE OR REPLACE TEMP TABLE _latest AS
+SELECT event_id, user_id, amount, op, updated_at
+FROM bronze.events_raw
+WHERE event_date = DATE '{{ ds }}'
+QUALIFY row_number() OVER (PARTITION BY event_id ORDER BY updated_at DESC) = 1;
+
+-- 2) apply inserts, updates, and tombstones in one statement
+MERGE INTO silver.events AS t
+USING _latest AS s ON t.event_id = s.event_id
+WHEN MATCHED AND s.op = 'D' THEN DELETE                              -- tombstone: drop the key
+WHEN MATCHED               THEN UPDATE SET user_id = s.user_id,      -- update in place
+                                           amount = s.amount, updated_at = s.updated_at
+WHEN NOT MATCHED AND s.op <> 'D' THEN INSERT (event_id, user_id, amount, updated_at)
+                                        VALUES (s.event_id, s.user_id, s.amount, s.updated_at);
+COMMIT;
+```
 
 | Principle | What your pipeline must do |
 |---|---|
-| **Determinism** | Derive everything from `ds`; never `now()` / `random()`. |
-| **Deduplication** | Reduce to the latest event per key **first**, with a window function: `QUALIFY row_number() OVER (PARTITION BY event_id ORDER BY updated_at DESC) = 1`. (Dedup happens before the write, not inside it.) |
-| **Tombstones** | After picking the latest event, drop the ones where `op = 'D'` — a deleted key must not appear in `silver.events`. |
-| **Idempotency** | `silver.events` load = DELETE the date + INSERT, inside one `.sql` file run by a `SQLExecuteQueryOperator`. Re-running a date must not change the result. |
-| **Atomicity** | Wrap the DELETE+INSERT in `BEGIN … COMMIT` inside the `.sql` file. |
-| **Reconciliation** | A `SQLCheckOperator` runs a `reconcile.sql` that returns TRUE only when `COUNT(*) in silver.events == number of keys whose latest event is not a delete` **and** `silver.events` has no duplicate `event_id`. |
-| **Fault tolerance / alerting** | `retries`, `retry_delay`, and `on_failure_callback=notify_on_failure` in `default_args`. |
+| **Determinism** | Everything derives from `{{ ds }}`; never `now()` / `random()`. |
+| **Batch dedup first** | Collapse the batch to the latest event per key (`QUALIFY row_number() … ORDER BY updated_at DESC`) **before** the `MERGE` — you cannot merge two source rows onto one target row. |
+| **Tombstones** | `WHEN MATCHED AND op = 'D' THEN DELETE`; a delete for a key not present is a no-op (`WHEN NOT MATCHED AND op <> 'D'` skips it). |
+| **Idempotency** | Re-applying the same date's batch leaves `silver.events` unchanged. |
+| **Atomicity** | The dedup + `MERGE` run inside one `BEGIN … COMMIT` in the `.sql`. |
+| **Reconciliation** | A `SQLCheckOperator` on `reconcile.sql` returns TRUE only when `silver.events` has **no duplicate `event_id`** and **no key whose latest event across the batch was a delete**. |
+| **Fault tolerance** | `retries`, `retry_delay`, `on_failure_callback=notify_on_failure` in `default_args`. |
 
 ### Test it yourself
 
-1. **Runs clean:** trigger `2024-03-01`. `silver.events` has **2 rows** (event_ids 1 and 2). Event 2's amount is **250.0** (the update won). Event 3 is **absent** (its latest event was a delete).
-2. **Idempotent:** trigger `2024-03-01` again — still 2 rows, not 4.
-3. **Reconcile catches dupes:** temporarily change your dedup to a plain `INSERT ... SELECT` (no `QUALIFY`, no tombstone filter), rerun, and confirm the reconcile task **fails** — `silver.events` now has duplicate `event_id`s and the deleted key. Then put the logic back.
-
-Inspect results:
-
-```bash
-cd session_02_airflow_intro/lab
-docker compose exec -T airflow-scheduler python -c "
-import duckdb
-c = duckdb.connect('/opt/airflow/db/dwh.duckdb', read_only=True)
-print(c.execute('SELECT event_id, amount FROM silver.events ORDER BY event_id').fetchall())
-"
-```
-
-> Inspect with plain `duckdb` and the file path. `dataops_common` only imports
-> inside an Airflow task, not from a bare `python -c`.
+1. **Runs clean:** trigger `2024-03-01`. `silver.events` has **90,000 rows** (100k inserted −
+   10k tombstoned). `event_id = 1`'s amount is the **updated** value `111.5` (base `11.5` + 100),
+   `event_id = 90001` is **absent** (tombstoned), and there are **no duplicate `event_id`s**.
+2. **Idempotent:** trigger `2024-03-01` again — still **90,000** rows, unchanged.
+3. **Accumulates (why `MERGE`, not rebuild):** point `load_changes.sql` at a second day whose
+   batch inserts new keys, updates some existing ones, and tombstones others; trigger
+   `2024-03-02`. `silver.events` reflects the **merged** state across both days — old keys still
+   there, deleted keys gone, new keys added — which a per-day rebuild could not give you.
+4. **The dedup matters:** temporarily `MERGE` straight from `bronze.events_raw` (skip `_latest`).
+   The `MERGE` fails — *multiple source rows matched a target row*. Put the dedup back.
 
 ---
 
-## Homework 2 — A data-quality gate on the fact table (required)
+## Homework 2 — SCD Type 2 history + a point-in-time query (required)
 
-The reference `reconcile` task checks three things. Real pipelines wrap a **suite**
-of independent checks around a table and refuse to publish if any fail — a
-data-quality gate. Build a small version of that.
+The lab *built* a Slowly-Changing-Dimension Type 2 table. Its whole reason to exist is the
+**temporal query** it unlocks: reconstructing what a dimension looked like at any past date.
+Here you keep two days of customer history, then answer "as of date X".
 
-Run the reference pipeline (`session_04_orders_medallion_etl`) for a date first so
-`gold.fact_sales` and `gold.dim_customer` exist. Then write a DAG `session_04_fact_sales_dq`
-that runs **all** of these checks against `gold.fact_sales` for the date — using the
-common-sql **check operators**, not a Python task that raises:
+### The dimension
 
-| Check | Rule | Operator |
-|---|---|---|
-| Primary key unique | no duplicate `order_id` | `SQLColumnCheckOperator` (`unique_check`) or `SQLTableCheckOperator` |
-| Not null | `customer_id` is never NULL | `SQLColumnCheckOperator` (`null_check`) |
-| Non-negative amounts | `amount >= 0` for all rows | `SQLColumnCheckOperator` (`min` ≥ 0) |
-| Referential integrity | every `fact_sales.customer_id` exists in `gold.dim_customer` | `SQLCheckOperator` with a `.sql` returning a boolean |
-| No future orders | `order_date <= ds` for all rows | `SQLCheckOperator` with a `.sql` returning a boolean |
+`gold.dim_customer_scd2(customer_id INT, name VARCHAR, tier VARCHAR, effective_date DATE, expiration_date DATE, is_current BOOLEAN, version INT)`.
 
-`SQLColumnCheckOperator`/`SQLTableCheckOperator` cover the single-column rules
-declaratively (`column_mapping` / `checks`); the two cross-row/cross-table rules go
-in small `SQLCheckOperator` queries. Any failing check fails the DAG.
+Seed a daily **snapshot** of the source (given — deterministic, 1,000 customers):
 
-Wire `on_failure_callback=notify_on_failure` so a failure alerts, and keep the tasks
-on `duckdb_pool`.
+```sql
+-- load_snapshot.sql : today's full snapshot of the source dimension
+DELETE FROM stage.customer_snapshot WHERE snapshot_date = DATE '{{ ds }}';
+INSERT INTO stage.customer_snapshot
+SELECT i, 'Customer ' || i,
+       CASE WHEN i <= {{ params.silver_upto }} THEN 'SILVER' ELSE 'BRONZE' END,
+       DATE '{{ ds }}'
+FROM range(1, 1001) AS t(i);
+```
+
+Run it for two dates so a slice of customers **change tier** between them:
+`2024-03-01` with `silver_upto = 0` (everyone BRONZE), then `2024-03-02` with `silver_upto = 200`
+(customers 1–200 upgrade to SILVER).
+
+### Your task
+
+Write a DAG `session_04_dim_customer_scd2` with `load_snapshot → apply_scd2 → point_in_time → reconcile`.
+
+1. **`apply_scd2.sql`** (the lab pattern — reuse it): for each run date, compare the snapshot to
+   the current rows; for a customer whose attributes changed, **expire** the current version
+   (`expiration_date = ds - 1 day`, `is_current = false`) and **insert** a new version
+   (`effective_date = ds`, `expiration_date = DATE '9999-12-31'`, `is_current = true`,
+   `version + 1`); insert brand-new customers as version 1. Unchanged customers are untouched.
+
+2. **`point_in_time.sql`** (the new skill): a query returning each customer's attributes **as of**
+   `{{ ds }}` — the version whose validity window covers that date:
+
+   ```sql
+   SELECT customer_id, name, tier, version
+   FROM gold.dim_customer_scd2
+   WHERE DATE '{{ ds }}' BETWEEN effective_date AND expiration_date
+   ORDER BY customer_id;
+   ```
+
+3. **`reconcile.sql`** (`SQLCheckOperator`): TRUE only when **exactly one** row per `customer_id`
+   is `is_current`, and **no** customer has overlapping validity windows (history is a clean,
+   gap-free timeline).
 
 ### Test it yourself
 
-1. Against a clean date, every check task is green.
-2. Break one rule on purpose and confirm the matching check task fails. For example,
-   insert an orphan row and rerun:
-   ```bash
-   cd session_02_airflow_intro/lab
-   docker compose exec -T airflow-scheduler python -c "
-   import duckdb
-   c = duckdb.connect('/opt/airflow/db/dwh.duckdb')
-   c.execute(\"INSERT INTO gold.fact_sales VALUES (999999, 999, 5.0, DATE '2024-03-01')\")
-   "
-   ```
-   Then delete the orphan row again so the table is clean.
+1. Run `2024-03-01` then `2024-03-02`. `gold.dim_customer_scd2` holds **1,200 rows**
+   (1,000 v1 + 200 v2), of which **1,000** are `is_current`.
+2. **Point-in-time as of `2024-03-01`:** 1,000 rows, **all BRONZE** — the SILVER upgrade hadn't
+   happened yet. **As of `2024-03-02`:** 1,000 rows, of which **200 are SILVER**. Same table, two
+   different truths, selected by date — that is what SCD 2 buys you.
+3. `reconcile` stays green (one current row per customer, no overlaps). Break it on purpose:
+   `apply_scd2` **without** expiring the old version (insert the new one only), rerun, and watch
+   the "exactly one current" check fail. Put the expiry back.
 
-### Short answer (include in your PR description)
+---
 
-DuckDB gave you MERGE, transactions, and these checks on a single file. In session 5
-we move to a lakehouse (Spark + Delta/Iceberg). In 2–3 sentences: **what does the
-single-file warehouse stop you from doing** that a lakehouse table format is built
-to handle? (Hint: think about the single-writer limit you hit in this session, and
-many jobs/engines reading and writing the same tables at once.)
+## Short answer (include in your PR description)
+
+DuckDB gave you `MERGE`, transactions, and a single-file warehouse. In session 5 we move to a
+lakehouse (Spark + Delta). In 2–3 sentences: **what does the single-file warehouse stop you from
+doing** that a lakehouse table format is built to handle? (Hint: the single-writer limit — many
+jobs and engines reading and writing the same tables at once.)
 
 ---
 
 ## Submit — open a Pull Request
 
 1. Create a branch: `git checkout -b homework/session-04/<your-name>`.
-2. Add your DAGs under `session_04_sql_dwh/homework/submissions/`.
+2. Add your DAGs + `.sql` under `session_04_sql_dwh/homework/submissions/`.
 3. Commit and push, then **open a Pull Request** against `main`.
-4. In the PR description include: what you did, the `silver.events` output after a
-   rerun (HW1), a note on which DQ check you broke to prove the gate works (HW2),
-   and your short answer above.
+4. In the PR describe: what you did; the `silver.events` count after a rerun and after Day 2
+   (HW1); the point-in-time result as of each date (HW2); which check you broke to prove each
+   reconcile works; and your short answer above.
 
-The PR is for review only — it will not be merged, so don't worry about conflicts
-with other submissions.
+The PR is for review only — it will not be merged, so don't worry about conflicts with other
+submissions.
 
 ## Acceptance criteria
 
-- [ ] HW1: `silver.events` keeps one row per `event_id` (latest by `updated_at`), tombstones removed; rerunning a date does not duplicate.
-- [ ] HW1: reconcile (`SQLCheckOperator`) fails if duplicates slip through; the dedup uses a window function, not a manual `GROUP BY` guess.
-- [ ] HW1: load is idempotent (DELETE-by-date + INSERT) and atomic (`BEGIN … COMMIT` in the `.sql`).
-- [ ] HW2: all five rules run as check operators; a failing check fails the DAG.
-- [ ] HW2: `on_failure_callback` wired; a deliberately broken rule makes the matching check task fail.
-- [ ] Both use operators + external `.sql` (no raw Python connections), reach the warehouse via `conn_id="duckdb_default"`, and run on `duckdb_pool`.
+- [ ] HW1: `silver.events` kept as current state with a **single `MERGE`** (insert/update/delete);
+  the batch is deduped to one row per key **before** the merge; tombstones remove keys.
+- [ ] HW1: the load is idempotent and atomic (`BEGIN … COMMIT`); `reconcile` fails on a duplicate
+  `event_id` or a surviving tombstone.
+- [ ] HW2: `apply_scd2` expires + inserts versions; the **point-in-time** query returns the
+  version valid on `{{ ds }}`; `reconcile` fails if a customer has ≠ 1 current row or overlapping
+  windows.
+- [ ] Both use operators + external `.sql` (no raw Python connections), reach the warehouse via
+  `conn_id="duckdb_default"`, run on `duckdb_pool`, and wire `on_failure_callback`.

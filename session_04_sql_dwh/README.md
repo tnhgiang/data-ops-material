@@ -46,6 +46,13 @@ gold.fact_sales       # one row per order, loaded idempotently + atomically
 The reference pipeline fills all four; the labs read `silver.orders` and build new
 Gold marts beside it.
 
+## Access
+
+| Service | URL | Credentials |
+|---|---|---|
+| Airflow UI | `http://localhost:8080` | `airflow` / `airflow` |
+| DuckDB warehouse | `session_04_sql_dwh/db/dwh.duckdb` (a file — open in DBeaver, see below) | — |
+
 > **DuckDB is single-writer.** Only one connection may write the file at a time, so
 > the pipelines are linear and you run one writing DAG at a time. That limit is
 > exactly what a lakehouse table format (session 5) is built to remove.
@@ -79,7 +86,7 @@ runnable from a terminal without any client installed.
 |---|---|
 | `demo/` | Mentor-run material: two DAGs — `session_04_demo_write_patterns` (idempotency + atomicity, one task) and the fully-built reference pipeline `session_04_orders_medallion_etl`. See [demo/README.md](demo/README.md). |
 | `lab/` | Two exercises you complete — an idempotent daily rollup fact, and an SCD Type 2 dimension. See [lab/README.md](lab/README.md). |
-| `homework/` | Take-home, submitted by Pull Request: deduplicate an append-only source, and build a data-quality gate. See [homework/README.md](homework/README.md). |
+| `homework/` | Take-home, submitted by Pull Request: apply a CDC change stream with a single `MERGE`, and keep SCD Type 2 history with a point-in-time query. See [homework/README.md](homework/README.md). |
 
 The DAGs are **operators + external SQL**: no raw Python database code. Each step is
 a `SQLExecuteQueryOperator` running a `.sql` file (templated with `{{ ds }}`), and
@@ -108,7 +115,7 @@ session_04_sql_dwh/
 │       └── sql/                             # one subfolder per DAG above,
 │                                             # given + TODO .sql files
 ├── homework/
-│   ├── README.md                  # dedup pipeline + data-quality gate
+│   ├── README.md                  # CDC-apply via MERGE + SCD2 point-in-time
 │   └── submissions/               # you add your DAGs + sql here (PR is review-only)
 └── db/                            # the DuckDB warehouse file lives here (mounted)
 
@@ -124,9 +131,10 @@ through running the reference pipeline and then the two exercises.
 
 ## Homework
 
-[homework/README.md](homework/README.md) — deduplicate a noisy append-only source to
-one row per key, and wrap a fact table in a data-quality gate that fails the run
-instead of publishing bad data. Submitted by opening a Pull Request.
+[homework/README.md](homework/README.md) — apply a noisy CDC change stream (inserts,
+updates, deletes/tombstones) into a current-state table with a single `MERGE`, and keep
+SCD Type 2 history you can query at any past date (point-in-time). Submitted by opening a
+Pull Request.
 
 ## Where these patterns come from
 
@@ -141,6 +149,28 @@ framework:
   [MERGE for SCD Type 2](https://duckdb.org/docs/current/guides/sql_features/merge) guide.
 - **Idempotent loads & CDC (upsert, tombstones, dedup, reconciliation)** —
   [SQL MERGE for Data Engineers: Upserts, CDC, and Idempotent Pipelines](https://dataengineeracademy.com/blog/sql-merge-for-data-engineers-upserts-cdc-and-idempotent-pipelines/).
+
+## Best-practice checklist
+
+Every practice below is demonstrated by real code in this session — not advice in the
+abstract. Use it as a review checklist for your own warehouse pipelines.
+
+| Area | Best practice | How this session applies it | Why it matters |
+|---|---|---|---|
+| **Modeling** | Medallion layering | `bronze` → `silver` → `gold` schemas, one responsibility each | A wrong number is traceable to one layer, not a tangle |
+| | Dimensional modeling | `MERGE` dimension (SCD 1 in the demo, SCD 2 in the lab) | Facts stay narrow; slowly-changing attributes live in dims |
+| **Correctness** | Idempotent loads | `DELETE`-by-date + `INSERT`, or `MERGE` — never blind append | A rerun or backfill equals a single run; no doubling |
+| | Atomicity | `BEGIN … COMMIT` around every `DELETE`+`INSERT` | A mid-load failure rolls back, never leaves a half-written table |
+| | Determinism | Rows derive from `{{ ds }}`, never `now()` / `random()` | A backfill reproduces exactly what a date should hold |
+| | Reconciliation | `SQLCheckOperator` on `reconcile.sql`: count, sum, business rules | "The task succeeded" is not proof the data is correct |
+| | Day-over-day guard | `reconcile` flags a > 50% row swing vs the prior day | Catches a half-loaded / doubled day that same-day checks pass |
+| | `NOT EXISTS`, not `NOT IN` | The referential-integrity check in `reconcile.sql` | A single `NULL` dim key makes `NOT IN` silently pass every orphan |
+| **Reliability** | Fault tolerance + alerting | `retries`, `retry_delay`, `on_failure_callback` → Slack | Transient failures self-heal; real failures page someone |
+| | Single-writer safety | All DAGs share the 1-slot `duckdb_pool` | Serializes writes to the single-file warehouse — no lock fights |
+| **Engineering** | Operators + external `.sql` | `SQLExecuteQueryOperator` / `SQLCheckOperator` + `.sql` files | Reviewable, testable SQL; no raw `get_conn()` Python glue |
+| | DRY config | `plugins/dataops_common/duckdb_dag.py` (`default_args`, load opts) | One home for the conn/pool/retry policy — no copy-paste drift |
+| | Lint + format in CI | `ruff` + `sqlfluff` (DuckDB dialect) via pre-commit | Consistent style, and it catches broken SQL before commit |
+| | Host warehouse access | `db/dwh.duckdb` is a plain file — DBeaver read-only, no `docker exec` | Inspect results without babysitting the container |
 
 ## Position in the course
 

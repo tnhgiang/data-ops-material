@@ -16,6 +16,9 @@ x-airflow-common:
     # Spark connection used by SparkSubmitOperator (JSON form keeps the spark://
     # scheme on the host so the hook builds master=spark://spark-master:7077).
     AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
+    # Jar paths as an Airflow Variable, read by the DAGs via Variable.get("spark_jars").
+    AIRFLOW_VAR_SPARK_JARS: /opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar
+    AIRFLOW__WEBSERVER__SHOW_TRIGGER_FORM_IF_NO_PARAMS: 'true'
     # MinIO / S3A + Trino credentials as env vars — no literals in the job or DAG
     # code. In production these would come from a secrets backend, not the image.
     AWS_ACCESS_KEY_ID: minioadmin
@@ -28,6 +31,7 @@ x-airflow-common:
     - ./lab/dags:/opt/airflow/dags/session_05_lab
     - ./demo/jobs:/opt/airflow/jobs/demo
     - ./lab/jobs:/opt/airflow/jobs/lab
+    - ./jobs:/opt/airflow/jobs/common
     - ./logs:/opt/airflow/logs
     - ./jars:/opt/jars
     - ../plugins:/opt/airflow/plugins
@@ -109,11 +113,10 @@ services:
     entrypoint: >
       /bin/sh -c "
         mc alias set local http://minio:9000 minioadmin minioadmin;
-        mc mb --ignore-existing local/warehouse;
-        mc mb --ignore-existing local/warehouse/raw;
-        mc mb --ignore-existing local/warehouse/fact_sales;
-        mc mb --ignore-existing local/warehouse/dim_customer;
-        echo 'MinIO buckets created.';
+        mc mb --ignore-existing local/bronze;
+        mc mb --ignore-existing local/silver;
+        mc mb --ignore-existing local/gold;
+        echo 'Medallion buckets created: bronze, silver, gold.';
       "
 
   hive-metastore:
@@ -181,7 +184,7 @@ services:
     restart: always
 
   trino:
-    image: trinodb/trino:435
+    image: trinodb/trino:445
     ports:
       - "8090:8080"
     volumes:

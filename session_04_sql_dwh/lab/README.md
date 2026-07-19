@@ -73,7 +73,7 @@ date before starting the exercises. All `docker compose` commands run from
    print('fact rows   :', c.execute(\"SELECT COUNT(*) FROM gold.fact_sales WHERE order_date='2024-03-01'\").fetchone()[0])
    "
    ```
-   Both are **6** (of 8 raw rows, two dirty ones were dropped at Silver).
+   Both are **400,000** (of 400,002 raw rows, two dirty ones were dropped at Silver).
 
    > Inspect the warehouse with plain `duckdb` and the file path, as above. The
    > `dataops_common` helper only imports **inside** an Airflow task, not from a
@@ -113,8 +113,8 @@ docker compose exec airflow-scheduler airflow dags trigger session_04_fact_custo
 
 Acceptance criteria:
 - Before you start, `reconcile` fails (its placeholder returns `false`) — that's the "not done yet" signal.
-- Once finished, the DAG runs green; `gold.fact_customer_daily` has 3 rows for the date (customers 101/102/103), and `SUM(total_amount)` equals `SUM(amount)` in `silver.orders`.
-- Triggering the same date twice leaves exactly 3 rows for that date (idempotent).
+- Once finished, the DAG runs green; `gold.fact_customer_daily` has 5,000 rows for the date (one per customer, ids 101–5100), and `SUM(total_amount)` equals `SUM(amount)` in `silver.orders`.
+- Triggering the same date twice leaves exactly 5,000 rows for that date (idempotent).
 - If you drop the `DELETE` (plain `INSERT`), a second run makes `reconcile` fail — put it back.
 
 ## 5. Lab 2 — a Slowly Changing Dimension (Type 2)

@@ -7,16 +7,16 @@ CREATE SCHEMA IF NOT EXISTS gold;
 CREATE SEQUENCE IF NOT EXISTS gold.seq_customer_key START 1;
 
 CREATE TABLE IF NOT EXISTS bronze.customer_snapshots (
-    customer_id   INTEGER,
-    tier          VARCHAR,
+    customer_id INTEGER,
+    tier VARCHAR,
     snapshot_date DATE
 );
 
 CREATE TABLE IF NOT EXISTS gold.dim_customer_scd2 (
-    customer_key   BIGINT DEFAULT nextval('gold.seq_customer_key') PRIMARY KEY,
-    customer_id    INTEGER,
-    tier           VARCHAR,
+    customer_key BIGINT DEFAULT nextval('gold.seq_customer_key') PRIMARY KEY,
+    customer_id INTEGER,
+    tier VARCHAR,
     effective_from DATE,
-    effective_to   DATE,      -- NULL while the version is current
-    is_current     BOOLEAN
+    effective_to DATE,      -- NULL while the version is current
+    is_current BOOLEAN
 );

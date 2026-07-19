@@ -8,7 +8,6 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 DATA_ROOT = Path(os.environ.get("DATAOPS_DATA_DIR", "/opt/airflow/data"))
 

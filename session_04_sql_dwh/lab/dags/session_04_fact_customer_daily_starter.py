@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from airflow.models.dag import DAG
 from airflow.providers.common.sql.operators.sql import (
     SQLCheckOperator,
     SQLExecuteQueryOperator,
 )
-
 from dataops_common.notifications import notify_on_failure  # noqa: F401 (for TODO #1)
 
 default_args = {
@@ -29,7 +28,6 @@ with DAG(
     template_searchpath="/opt/airflow/dags/session_04_lab/sql/fact_customer_daily_starter",
     tags=["session-04", "lab", "exercise"],
 ) as dag:
-
     opts = {"split_statements": True, "autocommit": True}
 
     create_schema = SQLExecuteQueryOperator(
@@ -38,8 +36,6 @@ with DAG(
     build_fact = SQLExecuteQueryOperator(
         task_id="build_fact", sql="build_fact_customer_daily.sql", **opts
     )
-    reconcile = SQLCheckOperator(
-        task_id="reconcile", sql="reconcile_fact_customer_daily.sql"
-    )
+    reconcile = SQLCheckOperator(task_id="reconcile", sql="reconcile_fact_customer_daily.sql")
 
     create_schema >> build_fact >> reconcile

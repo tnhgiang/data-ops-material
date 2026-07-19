@@ -1,4 +1,4 @@
-# Session 4 Demo — Mentor Run-Book
+# Session 4 Demo — Run-Book
 
 Two demos, in order — both real Airflow DAGs (operators + external `.sql`,
 triggered like any other pipeline), not standalone scripts. Every command and
@@ -36,7 +36,7 @@ mounts are live:
 cd session_02_airflow_intro/lab
 docker compose build      # one-time; skips instantly if already built
 docker compose up -d
-docker compose exec airflow-scheduler python -c "import duckdb; print(duckdb.__version__)"   # 1.5.4
+docker compose exec airflow-scheduler python -c "import duckdb; print(duckdb.__version__)"
 ```
 
 Have the Airflow UI open (`http://localhost:8080`, `airflow` / `airflow`) at the Grid
@@ -91,8 +91,8 @@ CREATE TABLE IF NOT EXISTS demo.write_patterns (
     order_id INTEGER, amount DOUBLE, order_date DATE
 );
 INSERT INTO demo.write_patterns VALUES
-    (1, 10.0, '{{ ds }}'), 
-    (2, 20.0, '{{ ds }}'), 
+    (1, 10.0, '{{ ds }}'),
+    (2, 20.0, '{{ ds }}'),
     (3, 30.0, '{{ ds }}');
 SQL
 ```
@@ -120,8 +120,8 @@ CREATE TABLE IF NOT EXISTS demo.write_patterns (
 );
 DELETE FROM demo.write_patterns WHERE order_date = '{{ ds }}';
 INSERT INTO demo.write_patterns VALUES
-    (1, 10.0, '{{ ds }}'), 
-    (2, 20.0, '{{ ds }}'), 
+    (1, 10.0, '{{ ds }}'),
+    (2, 20.0, '{{ ds }}'),
     (3, 30.0, '{{ ds }}'),
     (4, CAST('not-a-number' AS DOUBLE), '{{ ds }}')
 ;
@@ -155,8 +155,8 @@ CREATE TABLE IF NOT EXISTS demo.write_patterns (
 BEGIN;
 DELETE FROM demo.write_patterns WHERE order_date = '{{ ds }}';
 INSERT INTO demo.write_patterns VALUES
-    (1, 10.0, '{{ ds }}'), 
-    (2, 20.0, '{{ ds }}'), 
+    (1, 10.0, '{{ ds }}'),
+    (2, 20.0, '{{ ds }}'),
     (3, 30.0, '{{ ds }}'),
     (4, CAST('not-a-number' AS DOUBLE), '{{ ds }}')
 ;
@@ -190,6 +190,8 @@ a real one, on real data.
 
 ## Demo 2 — The reference pipeline, and what `reconcile` is.
 
+> This is my example, a business rule that I defined. In reality, it depends on your specific context and logic.😁
+
 The full Medallion pipeline in Airflow. We run it clean, show it's idempotent, then
 corrupt the exact thing `reconcile` guards and watch it catch the corruption, retry,
 fail, and alert. Uses date `2024-06-01` (no lab touches it).
@@ -208,8 +210,8 @@ docker compose exec airflow-scheduler airflow dags trigger session_04_orders_med
 In Grid view the run goes all green in ~25s:
 `create_schema → load_bronze → validate_to_silver → build_dim_customer → build_fact_sales → reconcile`.
 
-Show the layers — 8 raw rows in, 6 survive validation (two dirty rows dropped),
-6 land in the fact:
+Show the layers — 400,002 raw rows in, 400,000 survive validation (two dirty rows
+dropped), 400,000 land in the fact (across 5,000 customers in `dim_customer`):
 
 ```bash
 docker compose exec -T airflow-scheduler python -c "
@@ -220,19 +222,16 @@ print('bronze raw :', c.execute('SELECT COUNT(*) FROM bronze.orders_raw WHERE or
 print('silver     :', c.execute('SELECT COUNT(*) FROM silver.orders WHERE order_date=?',[d]).fetchone()[0])
 print('fact_sales :', c.execute('SELECT COUNT(*) FROM gold.fact_sales WHERE order_date=?',[d]).fetchone()[0])
 "
-# bronze raw : 8
-# silver     : 6
-# fact_sales : 6
 ```
 
 ### 2b. Show it's idempotent
 
-Clear the whole run for that date and re-check — the fact still has 6 rows, not 12.
-The `validate_to_silver` task log even reports `kept 6 of 8 rows ... (rejected 2)`.
+Clear the whole run for that date and re-check — the fact still has 400,000 rows, not
+800,000. `validate_to_silver` still drops exactly the same 2 dirty rows (400,002 raw →
+400,000 kept).
 
 ```bash
 docker compose exec airflow-scheduler airflow tasks clear session_04_orders_medallion_etl -s 2024-06-01 -e 2024-06-01 -y
-# after it finishes, fact_sales for 2024-06-01 is still 6
 ```
 
 Rerunning a date is safe — that is the whole point of
@@ -264,11 +263,13 @@ comes back false, and the check fails. The task log shows the failing row:
 
 ```
 airflow.exceptions.AirflowException: Test failed.
-Query: SELECT ... AS count_match, ... AS sum_match, ... AS rules_ok
-Results: (True, False, True)
+Query: SELECT ... AS count_match, ... AS sum_match, ... AS rules_ok, ... AS dod_ok
+Results: (True, False, True, True)
 ```
 
-(`sum_match = False` — silver's 232.50 no longer equals the fact's 332.50.)
+(`sum_match = False` — the fact's summed amount for that date is now $100 higher than
+silver's, so the two no longer tie. The other three checks — row-count match, business
+rules, and the day-over-day volume guard — still hold, so only `sum_match` trips.)
 
 **Narrate the retry window — don't wait in silence.** `reconcile` inherits
 `retries=2, retry_delay=1min`: it fails, waits ~1 min, retries, fails, retries once

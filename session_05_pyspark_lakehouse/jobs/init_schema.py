@@ -1,79 +1,57 @@
 from __future__ import annotations
 
-import logging
-import os
+from lakehouse_common import build_spark, get_logger
 
-from pyspark.sql import SparkSession
-from pyspark.sql.types import (
-    DateType,
-    DecimalType,
-    IntegerType,
-    StringType,
-    StructField,
-    StructType,
-)
+log = get_logger("init_schema")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("init_schema")
+# Optimized writes + auto-compaction (few, large files), data-skipping stats, and the
+# retention that time travel / VACUUM read from.
+TBLPROPERTIES = """
+    delta.autoOptimize.optimizeWrite = true,
+    delta.autoOptimize.autoCompact = true,
+    delta.dataSkippingNumIndexedCols = 8,
+    delta.logRetentionDuration = 'interval 30 days',
+    delta.deletedFileRetentionDuration = 'interval 7 days'
+"""
 
-MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
-ACCESS_KEY = os.environ["AWS_ACCESS_KEY_ID"]
-SECRET_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
+spark = build_spark("lakehouse-init")
 
-spark = (
-    SparkSession.builder
-    .appName("lakehouse-init")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .config("spark.hadoop.hive.metastore.uris", "thrift://hive-metastore:9083")
-    .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
-    .config("spark.hadoop.fs.s3a.access.key", ACCESS_KEY)
-    .config("spark.hadoop.fs.s3a.secret.key", SECRET_KEY)
-    .config("spark.hadoop.fs.s3a.path.style.access", "true")
-    .config("spark.sql.warehouse.dir", "s3a://warehouse/")
-    .enableHiveSupport()
-    .getOrCreate()
-)
+spark.sql("CREATE SCHEMA IF NOT EXISTS silver LOCATION 's3a://silver/'")
+spark.sql("CREATE SCHEMA IF NOT EXISTS gold LOCATION 's3a://gold/'")
 
-spark.sql("CREATE DATABASE IF NOT EXISTS lakehouse LOCATION 's3a://warehouse/'")
+# device_type (Day 2) and cost_micros (Day 3) are added later by the loader (mergeSchema).
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS silver.fact_ad_events (
+        event_id    STRING,
+        ad_id       STRING,
+        campaign_id STRING,
+        user_id     STRING,
+        event_type  STRING,
+        event_ts    TIMESTAMP,
+        event_date  DATE
+    )
+    USING delta
+    PARTITIONED BY (event_date)
+    LOCATION 's3a://silver/fact_ad_events'
+    TBLPROPERTIES ({TBLPROPERTIES})
+""")
+log.info("Created silver.fact_ad_events")
 
-fact_schema = StructType([
-    StructField("order_id", StringType(), False),
-    StructField("customer_id", StringType(), False),
-    StructField("product_id", StringType(), False),
-    StructField("amount", DecimalType(18, 2), False),
-    StructField("quantity", IntegerType(), False),
-    StructField("order_status", StringType(), False),
-    StructField("order_date", DateType(), False),
-    StructField("processed_at", DateType(), False),
-])
-
-dim_schema = StructType([
-    StructField("customer_id", StringType(), False),
-    StructField("customer_name", StringType(), True),
-    StructField("segment", StringType(), True),
-    StructField("updated_at", DateType(), False),
-])
-
-# fact_sales is partitioned by order_date so replaceWhere can overwrite one day's
-# partition atomically; dim_customer is a full table upserted by MERGE.
-(
-    spark.createDataFrame([], fact_schema).write
-    .format("delta")
-    .mode("overwrite")
-    .partitionBy("order_date")
-    .option("path", "s3a://warehouse/fact_sales")
-    .saveAsTable("lakehouse.fact_sales")
-)
-log.info("Created lakehouse.fact_sales")
-
-(
-    spark.createDataFrame([], dim_schema).write
-    .format("delta")
-    .mode("overwrite")
-    .option("path", "s3a://warehouse/dim_customer")
-    .saveAsTable("lakehouse.dim_customer")
-)
-log.info("Created lakehouse.dim_customer")
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS gold.agg_ad_daily (
+        event_date   DATE,
+        ad_id        STRING,
+        campaign_id  STRING,
+        impressions  BIGINT,
+        clicks       BIGINT,
+        unique_users BIGINT,
+        ctr          DOUBLE
+    )
+    USING delta
+    PARTITIONED BY (event_date)
+    LOCATION 's3a://gold/agg_ad_daily'
+    TBLPROPERTIES ({TBLPROPERTIES})
+""")
+log.info("Created gold.agg_ad_daily")
 
 spark.stop()
