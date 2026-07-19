@@ -125,12 +125,19 @@ validity window (`effective_from`, `effective_to`, `is_current`) plus a **surrog
 key** `customer_key` (one per version — Kimball), so you can ask "what tier was this
 customer on that day?". This DAG seeds its own source; you write one `.sql` file.
 
-`sql/scd2_dim_customer_starter/create_scd2.sql` (tables + the sequence for the
-surrogate key) and `sql/scd2_dim_customer_starter/load_snapshot.sql` (the
-deterministic daily source) are given.
+The source flows through the **Medallion layers**, same as the demo: the raw daily
+snapshot lands in `bronze.customer_snapshots`, a Silver step validates it into
+`silver.customer_snapshots`, and the SCD2 dimension is built from **Silver** — never
+straight from Bronze. The DAG runs `create_schema → load_snapshot → validate_snapshot
+→ apply_scd2`.
+
+`create_scd2.sql` (tables + sequence), `load_snapshot.sql` (the deterministic daily
+source — 5,000 customers, and a noisy feed: ~100 duplicate rows + ~50 null-tier rows),
+and `validate_snapshot.sql` (Bronze → Silver: drop null/unknown tiers, dedup to one row
+per customer) are given.
 
 1. **DAG, TODO #1** — fill `default_args` (same as Lab 1).
-2. **`sql/scd2_dim_customer_starter/apply_scd2.sql`** — inside one transaction (`BEGIN … COMMIT`):
+2. **`sql/scd2_dim_customer_starter/apply_scd2.sql`** — read from `silver.customer_snapshots`, inside one transaction (`BEGIN … COMMIT`):
    - **Close** current rows whose `tier` differs from today's snapshot: set `effective_to = DATE '{{ ds }}'`, `is_current = false`.
    - **Open** a new current row (`effective_from = DATE '{{ ds }}'`, `effective_to = NULL`, `is_current = true`) for every snapshot customer with no current row of that tier — new customers and the ones you just closed. Omit `customer_key` so the sequence fills it.
 
@@ -145,22 +152,52 @@ for d in 2024-01-01 2024-01-02 2024-01-03; do
 done
 ```
 
-Then inspect:
+Then verify — don't dump all 5,500 rows; check the totals and spot-check two customers:
 
 ```bash
 docker compose exec -T airflow-scheduler python -c "
 import duckdb
-c = duckdb.connect('/opt/airflow/db/dwh.duckdb', read_only=True)
-for r in c.execute('SELECT customer_key, customer_id, tier, effective_from, effective_to, is_current FROM gold.dim_customer_scd2 ORDER BY customer_id, effective_from').fetchall():
-    print(r)
+q = duckdb.connect('/opt/airflow/db/dwh.duckdb', read_only=True).execute
+print('total versions  :', q('SELECT COUNT(*) FROM gold.dim_customer_scd2').fetchone()[0], '(expect 5500)')
+print('current rows    :', q('SELECT COUNT(*) FROM gold.dim_customer_scd2 WHERE is_current').fetchone()[0], '(expect 5000)')
+print('>1 current/cust :', q('SELECT COUNT(*) FROM (SELECT customer_id FROM gold.dim_customer_scd2 WHERE is_current GROUP BY 1 HAVING COUNT(*)<>1)').fetchone()[0], '(expect 0)')
+print('cust 201 (slice):', q(\"SELECT tier,effective_from,effective_to,is_current FROM gold.dim_customer_scd2 WHERE customer_id=201 ORDER BY effective_from\").fetchall())
+print('cust 800 (outside):', q(\"SELECT tier,effective_from,effective_to,is_current FROM gold.dim_customer_scd2 WHERE customer_id=800 ORDER BY effective_from\").fetchall())
 "
 ```
 
+Or query the file directly from a **DuckDB client on your host** (DBeaver, or the `duckdb` CLI) — no `docker exec`. Open `session_04_sql_dwh/db/dwh.duckdb` read-only and run:
+
+```sql
+-- totals + the "exactly one current per customer" invariant
+SELECT
+    COUNT(*)                                          AS total_versions,   -- 5500
+    COUNT(*) FILTER (WHERE is_current)                AS current_rows,     -- 5000
+    (SELECT COUNT(*) FROM (
+        SELECT customer_id FROM gold.dim_customer_scd2
+        WHERE is_current GROUP BY customer_id HAVING COUNT(*) <> 1))
+                                                      AS customers_bad     -- 0
+FROM gold.dim_customer_scd2;
+
+-- spot-check a changed customer (2 versions) vs an unchanged one (1 version)
+SELECT customer_key, customer_id, tier, effective_from, effective_to, is_current
+FROM gold.dim_customer_scd2
+WHERE customer_id IN (201, 800)
+ORDER BY customer_id, effective_from;
+```
+
+> Match the DBeaver DuckDB driver to this file's version (`1.5.4`), and disconnect
+> before triggering the DAG — DuckDB allows many readers *or* one writer, not both.
+
 Acceptance criteria:
-- Customer 201 has **two** versions with **different `customer_key`s**: `gold` valid
-  `[2024-01-01, 2024-01-03)` with `is_current=false`, and `platinum` valid from
-  `2024-01-03` with `is_current=true`.
-- Customer 202 has **one** current `silver` version.
+- **Silver drops the noise:** `bronze.customer_snapshots` = 5,150 rows/day →
+  `silver.customer_snapshots` = **5,000** (dedup + null-tier removed).
+- Customer **201** (in the changing slice 201–700) has **two** versions with
+  **different `customer_key`s**: `gold` valid `[2024-01-01, 2024-01-03)` with
+  `is_current=false`, and `platinum` valid from `2024-01-03` with `is_current=true`.
+- A customer **outside** the slice (e.g. 800) has **one** current version, unchanged.
+- After the three days: `dim_customer_scd2` = **5,500** rows total, **5,000** current
+  (the 500-customer slice gained a v2 on 2024-01-03).
 - Re-running any of those dates does **not** add a duplicate version (idempotent) —
   the check is that a same-tier snapshot opens no new row.
 

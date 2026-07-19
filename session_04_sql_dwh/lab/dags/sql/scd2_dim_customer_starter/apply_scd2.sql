@@ -1,8 +1,10 @@
 -- Lab 2 — TODO: merge the day's snapshot into gold.dim_customer_scd2, in ONE
--- transaction, so rerunning the same date changes nothing (idempotent). Two steps:
+-- transaction, so rerunning the same date changes nothing (idempotent). Read from
+-- silver.customer_snapshots (the validated snapshot), NOT bronze — the dimension is
+-- built silver -> gold, same as the demo's dim_customer. Two steps:
 --
 --   Step A — CLOSE: for a customer whose CURRENT row has a tier different from
---            today's snapshot (bronze.customer_snapshots for DATE '{{ ds }}'),
+--            today's snapshot (silver.customer_snapshots for DATE '{{ ds }}'),
 --            set effective_to = DATE '{{ ds }}' and is_current = false.
 --
 --   Step B — OPEN: INSERT a new current row (effective_from = DATE '{{ ds }}',

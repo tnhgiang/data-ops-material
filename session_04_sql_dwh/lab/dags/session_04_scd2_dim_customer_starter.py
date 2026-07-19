@@ -31,6 +31,9 @@ with DAG(
     load_snapshot = SQLExecuteQueryOperator(
         task_id="load_snapshot", sql="load_snapshot.sql", **opts
     )
+    validate_snapshot = SQLExecuteQueryOperator(
+        task_id="validate_snapshot", sql="validate_snapshot.sql", **opts
+    )
     apply_scd2 = SQLExecuteQueryOperator(task_id="apply_scd2", sql="apply_scd2.sql", **opts)
 
-    create_schema >> load_snapshot >> apply_scd2
+    create_schema >> load_snapshot >> validate_snapshot >> apply_scd2
