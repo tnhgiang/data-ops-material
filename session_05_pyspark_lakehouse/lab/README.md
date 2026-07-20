@@ -34,7 +34,51 @@ shape — read them if you get stuck, but write your own first.
 
 Edits under `lab/` are picked up automatically (scheduler rescans ~30s; Spark jobs re-read per run).
 
-## 3. Lab 1 — the deduped fact (Day 1)
+## 3. Table schemas — what goes in, what you produce
+
+**Input — `s3a://bronze/ad_events/{ds}.csv`** (one row per ad event; the schema grows over the 3 days):
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | string | unique per event, but **~2% are duplicated** (retries) — you dedup on this |
+| `ad_id` | string | e.g. `AD-0042` |
+| `campaign_id` | int → **string** | integer on Day 1–2, string code `"cmp_07"` from **Day 3** |
+| `user_id` | string | e.g. `U-01234` |
+| `event_type` | string | `impression` or `click` |
+| `event_ts` | timestamp | event time (within the day) |
+| `device_type` | string | **added Day 2** — `mobile` / `desktop` / `tablet` |
+| `cost_micros` | int | **added Day 3** — spend in micros |
+
+**Lab 1 output — `silver.fact_ad_events`** (deduped events, partitioned by `event_date`):
+
+| Column | Type | How you build it |
+|---|---|---|
+| `event_id` | string | cast to string |
+| `ad_id` | string | cast to string |
+| `campaign_id` | string | cast to string → **stable type across the Day-3 change** |
+| `user_id` | string | cast to string |
+| `event_type` | string | keep only `impression` / `click` |
+| `event_ts` | timestamp | from source |
+| `device_type` | string | evolves in on Day 2 (NULL for Day-1 rows) |
+| `cost_micros` | int | evolves in on Day 3 (NULL for Day-1/2 rows) |
+| `event_date` | date | `to_date(event_ts)` — the **partition column** |
+
+> `event_id … event_ts` + `event_date` exist from Day 1 (see `jobs/init_schema.py`); `device_type`
+> and `cost_micros` are **added by your write** via `mergeSchema` when they first appear (Lab 3).
+
+**Lab 2 output — `gold.agg_ad_daily`** (one row per ad per day, partitioned by `event_date`):
+
+| Column | Type | How you build it |
+|---|---|---|
+| `event_date` | date | group key (partition column) |
+| `ad_id` | string | group key |
+| `campaign_id` | string | group key |
+| `impressions` | bigint | `count` of rows where `event_type = 'impression'` |
+| `clicks` | bigint | `count` of rows where `event_type = 'click'` |
+| `unique_users` | bigint | `countDistinct(user_id)` |
+| `ctr` | double | `round(clicks / impressions, 4)`, `0.0` when no impressions |
+
+## 4. Lab 1 — the deduped fact (Day 1)
 
 `lab/jobs/build_fact_ad_events.py`. The Spark session and the raw CSV read are given.
 
@@ -54,7 +98,7 @@ docker compose exec airflow-scheduler airflow dags trigger session_05_ad_daily_m
 
 `build_fact_ad_events` should load **52,528** rows (deduped from 53,600 raw).
 
-## 4. Lab 2 — the daily aggregate
+## 5. Lab 2 — the daily aggregate
 
 `lab/jobs/aggregate_ad_daily.py`. This date's fact rows are read for you.
 
@@ -65,7 +109,7 @@ docker compose exec airflow-scheduler airflow dags trigger session_05_ad_daily_m
 
 After a run, `agg_ad_daily` has **200 rows** for the date (one per ad), CTR ≈ 3%.
 
-## 5. Lab 3 — survive a schema change, then reconcile
+## 6. Lab 3 — survive a schema change, then reconcile
 
 Now trigger **Day 2** — the source added a `device_type` column:
 
@@ -89,7 +133,7 @@ enforces the schema by default and rejects the new column.
   4. `prev_rows` and `abs(fact_rows - prev_rows) / prev_rows > MAX_DAY_OVER_DAY_DRIFT` — day-over-day volume guard.
 - **DAG TODO:** add `on_failure_callback=notify_on_failure` to `default_args`.
 
-## 6. Acceptance criteria
+## 7. Acceptance criteria
 
 - Before you finish, the Spark tasks fail (`NotImplementedError`) and `reconcile` fails — the
   "not done yet" signals.
@@ -99,7 +143,7 @@ enforces the schema by default and rejects the new column.
   it, Day 2/3 load and Day 1's `device_type`/`cost_micros` read NULL.
 - If you drop the dedup, `reconcile` fails (fact rows = 53,600 ≠ 52,528 distinct) — put it back.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|

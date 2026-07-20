@@ -300,7 +300,7 @@ This session walks that policy across the 3-day dump:
 | What changed on the source | Decision | Action the platform takes | This session's example |
 |---|---|---|---|
 | A **new additive** column appears | **Accept** | Opt in with `mergeSchema=true` — Delta adds the column; old rows read `NULL` , add all new columns to a `json` field (`json` term depends on techstack). | Day 2 adds `device_type` |
-| A column's **type changed** | **Absorb** | Normalize the column to a stable type at ingestion (cast id columns to `string`) | Day 3 ships `campaign_id` as `"cmp_07"` (int → string) — no `DELTA_FAILED_TO_MERGE_FIELDS` |
+| A column's **type changed** | **Absorb** | Normalize the column to a stable type at ingestion (cast id columns to `string`, Cash semantic should be stored as `Decimal(38,6)`),... | Day 3 ships `campaign_id` as `"cmp_07"` (int → string) — no `DELTA_FAILED_TO_MERGE_FIELDS` |
 | An **unknown/unexpected** column appears | **Ignore** | `select(KNOWN_COLUMNS …)` before the write — drop it rather than alter the table | an out-of-band field the source adds without notice |
 | A **required** column disappears | **Reject & page** | Fail the load loudly *before* it corrupts the table | homework schema-guard: missing `user_id` |
 

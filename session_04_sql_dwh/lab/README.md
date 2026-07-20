@@ -83,7 +83,59 @@ date before starting the exercises. All `docker compose` commands run from
 > runs on the 1-slot `duckdb_pool`, so Airflow serializes warehouse access even if
 > two DAGs are triggered at once.
 
-## 4. Lab 1 — an idempotent daily rollup fact
+## 4. Table schemas — what you read, what you produce
+
+**Lab 1** rolls `silver.orders` up into `gold.fact_customer_daily`.
+
+**Input — `silver.orders`** (produced by the reference pipeline; one row per order):
+
+| Column | Type | Notes |
+|---|---|---|
+| `order_id` | bigint | primary key |
+| `customer_id` | integer | ids 101–5100 |
+| `customer_name` | varchar | |
+| `amount` | double | order value |
+| `order_date` | date | the run date `ds` |
+
+**Lab 1 output — `gold.fact_customer_daily`** (target table given; one row per customer per day):
+
+| Column | Type | How you build it |
+|---|---|---|
+| `customer_id` | integer | group key |
+| `order_date` | date | group key — `DATE '{{ ds }}'` |
+| `order_count` | integer | `COUNT(*)` per customer per day |
+| `total_amount` | double | `SUM(amount)` per customer per day |
+
+Primary key `(customer_id, order_date)`.
+
+---
+
+**Lab 2** builds an SCD Type 2 dimension from the validated snapshot.
+
+**Input — `silver.customer_snapshots`** (validated from `bronze.customer_snapshots` by the given
+`validate_snapshot.sql`: nulls dropped, tier domain enforced, deduped — one row per customer per day):
+
+| Column | Type | Notes |
+|---|---|---|
+| `customer_id` | integer | business key |
+| `tier` | varchar | `gold` / `silver` / `platinum` |
+| `snapshot_date` | date | the run date `ds` |
+
+> `bronze.customer_snapshots` has the same three columns but carries the noise (~100 duplicate +
+> ~50 null-tier rows/day). You read **Silver**, never Bronze.
+
+**Lab 2 output — `gold.dim_customer_scd2`** (tables given; one row per customer **version**):
+
+| Column | Type | Notes |
+|---|---|---|
+| `customer_key` | bigint | **surrogate** PK — one per version, filled by `gold.seq_customer_key` (omit it on INSERT) |
+| `customer_id` | integer | business key — repeats across a customer's versions |
+| `tier` | varchar | the tier for this version |
+| `effective_from` | date | version start — `DATE '{{ ds }}'` |
+| `effective_to` | date | version end; **NULL while current** |
+| `is_current` | boolean | `true` for the live version |
+
+## 5. Lab 1 — an idempotent daily rollup fact
 
 DAG: `lab/dags/session_04_fact_customer_daily_starter.py`. Build a Gold table with
 one row per customer per day — `order_count` and `total_amount` — aggregated from
@@ -115,9 +167,12 @@ Acceptance criteria:
 - Before you start, `reconcile` fails (its placeholder returns `false`) — that's the "not done yet" signal.
 - Once finished, the DAG runs green; `gold.fact_customer_daily` has 5,000 rows for the date (one per customer, ids 101–5100), and `SUM(total_amount)` equals `SUM(amount)` in `silver.orders`.
 - Triggering the same date twice leaves exactly 5,000 rows for that date (idempotent).
-- If you drop the `DELETE` (plain `INSERT`), a second run makes `reconcile` fail — put it back.
+- If you drop the `DELETE` (plain `INSERT`), a second run **errors at `build_fact`** — DuckDB
+  enforces the `(customer_id, order_date)` primary key, so re-inserting the day's rows is a
+  duplicate-key violation (the DB itself guards the grain). Put the `DELETE` back so the run is
+  idempotent.
 
-## 5. Lab 2 — a Slowly Changing Dimension (Type 2)
+## 6. Lab 2 — a Slowly Changing Dimension (Type 2)
 
 DAG: `lab/dags/session_04_scd2_dim_customer_starter.py`. The reference `dim_customer`
 is SCD Type 1 — it overwrites, so history is lost. Here you keep every version with a
@@ -143,12 +198,14 @@ per customer) are given.
 
 Reference: DuckDB's [MERGE for SCD Type 2](https://duckdb.org/docs/current/guides/sql_features/merge) guide.
 
-Test the history is built correctly by running three days **in order**:
+Test the history is built correctly by running three days **strictly in order** — SCD2 is
+sequential, so 2024-01-01 must finish before 2024-01-02 starts. `--wait-for-completion` blocks
+until each run is done, so the next date can't overtake it (a fixed `sleep` can't guarantee that):
 
 ```bash
 for d in 2024-01-01 2024-01-02 2024-01-03; do
-  docker compose exec airflow-scheduler airflow dags trigger session_04_scd2_dim_customer_starter -e $d
-  sleep 20
+  docker compose exec airflow-scheduler \
+    airflow dags trigger session_04_scd2_dim_customer_starter -e $d --wait-for-completion
 done
 ```
 
@@ -201,7 +258,7 @@ Acceptance criteria:
 - Re-running any of those dates does **not** add a duplicate version (idempotent) —
   the check is that a same-tier snapshot opens no new row.
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|

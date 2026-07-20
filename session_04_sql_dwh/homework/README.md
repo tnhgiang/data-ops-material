@@ -98,21 +98,9 @@ update). So you must **collapse the batch to the latest event per key first**, t
 -- apply_cdc.sql
 BEGIN;
 
--- 1) reduce the batch to ONE row per key (the newest event) BEFORE merging
-CREATE OR REPLACE TEMP TABLE _latest AS
-SELECT event_id, user_id, amount, op, updated_at
-FROM bronze.events_raw
-WHERE event_date = DATE '{{ ds }}'
-QUALIFY row_number() OVER (PARTITION BY event_id ORDER BY updated_at DESC) = 1;
+-- 1) reduce the batch to ONE row per key (the newest event) BEFORE merging.
 
--- 2) apply inserts, updates, and tombstones in one statement
-MERGE INTO silver.events AS t
-USING _latest AS s ON t.event_id = s.event_id
-WHEN MATCHED AND s.op = 'D' THEN DELETE                              -- tombstone: drop the key
-WHEN MATCHED               THEN UPDATE SET user_id = s.user_id,      -- update in place
-                                           amount = s.amount, updated_at = s.updated_at
-WHEN NOT MATCHED AND s.op <> 'D' THEN INSERT (event_id, user_id, amount, updated_at)
-                                        VALUES (s.event_id, s.user_id, s.amount, s.updated_at);
+-- 2) apply inserts, updates, and tombstones in one statement.
 COMMIT;
 ```
 
@@ -137,7 +125,13 @@ COMMIT;
    `2024-03-02`. `silver.events` reflects the **merged** state across both days — old keys still
    there, deleted keys gone, new keys added — which a per-day rebuild could not give you.
 4. **The dedup matters:** temporarily `MERGE` straight from `bronze.events_raw` (skip `_latest`).
-   The `MERGE` fails — *multiple source rows matched a target row*. Put the dedup back.
+   The `MERGE` fails with a **`PRIMARY KEY … duplicate key` constraint error** — the un-deduped
+   batch carries the same `event_id` several times (a retry + a late update), so the
+   `WHEN NOT MATCHED … INSERT` branch tries to insert that key more than once. Put the dedup back.
+   (SQL-standard engines like Postgres/Snowflake instead reject this earlier with *"multiple
+   source rows matched a target row"*; DuckDB doesn't enforce that cardinality check, so here the
+   duplicate surfaces on the insert — either way the lesson is the same: collapse to one row per
+   key *before* the `MERGE`.)
 
 ---
 
@@ -150,6 +144,14 @@ Here you keep two days of customer history, then answer "as of date X".
 ### The dimension
 
 `gold.dim_customer_scd2(customer_id INT, name VARCHAR, tier VARCHAR, effective_date DATE, expiration_date DATE, is_current BOOLEAN, version INT)`.
+
+> **Windowing convention — deliberately different from the lab.** The lab left the current
+> version open with `effective_to = NULL` and used a **half-open** window (`effective_to` = the
+> *next* version's start date). Here the open version instead carries a **high-date sentinel**
+> `expiration_date = DATE '9999-12-31'`, and an expired version's `expiration_date = ds - 1 day` —
+> a **closed, inclusive** window (`[effective_date, expiration_date]`), which is why the
+> point-in-time query can use `BETWEEN`. Both the NULL/half-open and sentinel/closed conventions
+> are standard in the wild; using each once is intentional so you've seen both.
 
 Seed a daily **snapshot** of the source (given — deterministic, 1,000 customers):
 
