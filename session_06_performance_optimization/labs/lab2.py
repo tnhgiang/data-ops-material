@@ -15,7 +15,10 @@ while day <= end:
     batch = orders.filter(F.to_date("order_purchase_timestamp") == F.lit(str(day)))
     (
         batch.repartition(6)
-        .write.format("delta").mode("append").partitionBy("order_date").save(TABLE)
+        .write.format("delta")
+        .mode("append")
+        .partitionBy("order_date")
+        .save(TABLE)
     )
     day += dt.timedelta(days=1)
 print(f"lab2: finished daily ingestion up to {end}")

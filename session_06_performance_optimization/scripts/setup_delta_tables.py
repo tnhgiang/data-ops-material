@@ -18,8 +18,11 @@ def load(name, partition_by=None, derive=None):
     print(f"Loaded {name}: {df.count():,} rows -> {WAREHOUSE}/{name}")
 
 
-load("orders", partition_by="order_date",
-     derive=lambda df: df.withColumn("order_date", F.to_date("order_purchase_timestamp")))
+load(
+    "orders",
+    partition_by="order_date",
+    derive=lambda df: df.withColumn("order_date", F.to_date("order_purchase_timestamp")),
+)
 load("order_items")
 load("customers")
 load("payments")

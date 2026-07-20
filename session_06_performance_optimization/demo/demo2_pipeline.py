@@ -5,11 +5,14 @@ from spark_common import build_spark
 
 AQE = os.environ.get("AQE", "false")
 
-spark = build_spark(f"demo2-aqe-{AQE}", {
-    "spark.sql.adaptive.enabled": AQE,
-    "spark.sql.adaptive.coalescePartitions.enabled": AQE,
-    "spark.sql.shuffle.partitions": "200",
-})
+spark = build_spark(
+    f"demo2-aqe-{AQE}",
+    {
+        "spark.sql.adaptive.enabled": AQE,
+        "spark.sql.adaptive.coalescePartitions.enabled": AQE,
+        "spark.sql.shuffle.partitions": "200",
+    },
+)
 
 orders = spark.read.format("delta").load("s3a://warehouse/orders")
 order_items = spark.read.format("delta").load("s3a://warehouse/order_items")
