@@ -125,7 +125,7 @@ delta.deletedFileRetentionDuration  = 'interval 7 days'    -- how long VACUUM ke
 | Table Format | Delta Lake | 3.2.0 | — |
 | Processing | PySpark | 3.5.x | — |
 | Catalog | Hive Metastore | 3.0.0 | 9083 |
-| Query Engine | Trino | 435 | 8090 |
+| Query Engine | Trino | 445 | 8090 |
 | Orchestration | Airflow | 2.9.0 (Celery) | 8888 |
 | Spark | Spark standalone | 3.5.0 | 8080 |
 
@@ -290,7 +290,7 @@ Spark + Delta pipelines.
 | | No hardcoded jars/secrets | Jars from `Variable.get("spark_jars")`; creds from `AWS_*` env vars | Config and secrets never baked into job or DAG code |
 | | Lint + format in CI | `ruff` + `sqlfluff` (Trino dialect) via pre-commit | Consistent style; catches broken SQL before commit |
 
-### Scenario — how the platform acts on a table's schema drift
+### Scenario — how the platform acts on a table's schema drift (Schema Evolution)
 
 Schema is where a data platform earns its keep. A feed's shape *will* change; the point is
 that the platform doesn't react ad-hoc — it **classifies the drift and takes a defined action
@@ -299,9 +299,9 @@ This session walks that policy across the 3-day dump:
 
 | What changed on the source | Decision | Action the platform takes | This session's example |
 |---|---|---|---|
-| A **new additive** column appears | **Accept** | Opt in with `mergeSchema=true` — Delta adds the column; old rows read `NULL` , add all new columns to a `json` field (`json` term depends on techstack). | Day 2 adds `device_type` |
-| A column's **type changed** | **Absorb** | Normalize the column to a stable type at ingestion (cast id columns to `string`, Cash semantic should be stored as `Decimal(38,6)`),... | Day 3 ships `campaign_id` as `"cmp_07"` (int → string) — no `DELTA_FAILED_TO_MERGE_FIELDS` |
-| An **unknown/unexpected** column appears | **Ignore** | `select(KNOWN_COLUMNS …)` before the write — drop it rather than alter the table | an out-of-band field the source adds without notice |
+| A **new additive** column appears | **Accept** | Opt in with `mergeSchema=true` — Delta adds the column table-wide; old rows read `NULL`. | Day 2 adds `device_type` |
+| A column's **type changed** | **Absorb** | Normalize the column to a stable type at ingestion — e.g. cast id columns to `string`, or store money as `Decimal(38,6)` rather than a float. | Day 3 ships `campaign_id` as `"cmp_07"` (int → string) — no `DELTA_FAILED_TO_MERGE_FIELDS` |
+| An **unknown/unexpected** column appears | **Ignore/Accept** | `select(KNOWN_COLUMNS …)` before the write — drop it rather than alter the table / Add new field/unknown fields into a `json` field at target table | an out-of-band field the source adds without notice |
 | A **required** column disappears | **Reject & page** | Fail the load loudly *before* it corrupts the table | homework schema-guard: missing `user_id` |
 
 The rule of thumb: **additive is safe to accept, type drift you absorb by normalizing, unknown

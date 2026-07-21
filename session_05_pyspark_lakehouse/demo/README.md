@@ -56,10 +56,10 @@ docker exec spark-master /opt/spark/bin/spark-sql \
 docker exec spark-master /opt/spark/bin/spark-sql \
   -e "SELECT ad_id, impressions, clicks, unique_users, ctr FROM gold.agg_ad_daily
       WHERE event_date = DATE '2026-06-26' ORDER BY impressions DESC LIMIT 5"
-# AD-0083  284  9  285  0.0317
-# AD-0114  276  6  276  0.0217
-# AD-0023  271  5  270  0.0185
-# ...   (200 ads; ~47,515 total views, ~1,485 clicks, CTR ≈ 3.1% — a realistic display CTR)
+# AD-0083  304  10  306  0.0329
+# AD-0114  293  6   293  0.0205
+# AD-0023  290  6   290  0.0207
+# ...   (200 ads; ~50,939 total views, ~1,589 clicks, CTR ≈ 3.1% — a realistic display CTR)
 ```
 
 `reconcile` already proved these tie out — and it does it **entirely in Trino**, never pulling
