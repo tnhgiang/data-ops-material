@@ -1,6 +1,8 @@
 from pyspark.sql import functions as F
-from spark_common import build_spark
+from pyspark.sql.functions import broadcast
+from spark_common import build_spark, get_logger
 
+log = get_logger(__name__)
 spark = build_spark(
     "demo1",
     {
@@ -10,17 +12,15 @@ spark = build_spark(
     },
 )
 
-orders = spark.read.format("delta").load("s3a://warehouse/orders")
-order_items = spark.read.format("delta").load("s3a://warehouse/order_items")
-customers = spark.read.format("delta").load("s3a://warehouse/customers")
+orders = spark.read.format("delta").load("s3a://silver/orders")
+order_items = spark.read.format("delta").load("s3a://silver/order_items")
+customers = spark.read.format("delta").load("s3a://silver/customers")
 
-enriched = orders.join(order_items, "order_id").join(customers, "customer_id")
+enriched = orders.join(order_items, "order_id").join(broadcast(customers), "customer_id")
 result = enriched.groupBy("customer_state").agg(F.sum("price").alias("gmv"))
 
-result.write.format("delta").mode("overwrite").save("s3a://warehouse/demo1_out")
-print(f"demo1 done: {result.count()} state rows")
-print(
-    "Open http://localhost:18080 -> the last join stage -> Summary Metrics (Max vs Median duration)."
-)
+result.write.format("delta").mode("overwrite").save("s3a://gold/demo1_state_gmv")
+log.info("demo1 done: %d state rows -> s3a://gold/demo1_state_gmv", result.count())
+log.info("Inspect the run at http://localhost:18080 -> Stages -> Summary Metrics")
 
 spark.stop()
