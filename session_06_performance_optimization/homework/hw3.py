@@ -1,16 +1,29 @@
+import logging
 import os
 
 import duckdb
 
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(filename)s:%(lineno)d %(message)s"
+)
+log = logging.getLogger(__name__)
+
 DATA_DIR = os.environ.get("DATA_DIR", "data")
-orders_glob = os.path.join(DATA_DIR, "orders", "*.parquet")
 db_path = os.path.join(DATA_DIR, "hw3.duckdb")
 
 con = duckdb.connect(db_path)
+# Bronze parquet lives on MinIO; DuckDB reads it over the exposed S3 API.
+con.execute("INSTALL httpfs; LOAD httpfs;")
+con.execute("SET s3_endpoint='localhost:9000'")
+con.execute("SET s3_access_key_id='minioadmin'")
+con.execute("SET s3_secret_access_key='minioadmin'")
+con.execute("SET s3_use_ssl=false")
+con.execute("SET s3_url_style='path'")
+
 con.execute("DROP TABLE IF EXISTS orders")
-con.execute(f"CREATE TABLE orders AS SELECT * FROM read_parquet('{orders_glob}')")
+con.execute("CREATE TABLE orders AS SELECT * FROM read_parquet('s3://bronze/orders/*.parquet')")
 n = con.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-print(f"Loaded orders into {db_path}: {n:,} rows\n")
+log.info("Loaded orders into %s: %s rows", db_path, f"{n:,}")
 
 query = """
 EXPLAIN ANALYZE
@@ -21,8 +34,6 @@ WHERE order_approved_at >= NOW() - INTERVAL '30 days'
 ORDER BY order_approved_at DESC;
 """
 
-print("=== EXPLAIN ANALYZE ===")
 plan = con.execute(query).fetchall()
-print("\n".join(row[1] for row in plan))
-print("\nHow many rows survive the filter, and does the result depend on when you run it?")
+log.info("EXPLAIN ANALYZE:\n%s", "\n".join(row[1] for row in plan))
 con.close()

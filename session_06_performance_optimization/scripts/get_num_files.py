@@ -1,12 +1,12 @@
 import sys
 
-from spark_common import build_spark
+from spark_common import build_spark, get_logger
 
-path = sys.argv[1] if len(sys.argv) > 1 else "s3a://warehouse/lab2_orders"
+log = get_logger(__name__)
+path = sys.argv[1]
 
 spark = build_spark("get-num-files")
-spark.sql(f"DESCRIBE DETAIL delta.`{path}`").select("numFiles", "sizeInBytes").show(truncate=False)
+detail = spark.sql(f"DESCRIBE DETAIL delta.`{path}`").select("numFiles", "sizeInBytes").first()
 df = spark.read.format("delta").load(path)
-print("inputFiles() count:", len(df.inputFiles()))
-print("rows:", df.count())
+log.info("%s: numFiles=%d sizeInBytes=%d rows=%d", path, detail[0], detail[1], df.count())
 spark.stop()

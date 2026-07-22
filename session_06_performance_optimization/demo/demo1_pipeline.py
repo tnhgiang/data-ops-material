@@ -1,5 +1,4 @@
 from pyspark.sql import functions as F
-from pyspark.sql.functions import broadcast
 from spark_common import build_spark, get_logger
 
 log = get_logger(__name__)
@@ -16,7 +15,7 @@ orders = spark.read.format("delta").load("s3a://silver/orders")
 order_items = spark.read.format("delta").load("s3a://silver/order_items")
 customers = spark.read.format("delta").load("s3a://silver/customers")
 
-enriched = orders.join(order_items, "order_id").join(broadcast(customers), "customer_id")
+enriched = orders.join(order_items, "order_id").join(customers, "customer_id")
 result = enriched.groupBy("customer_state").agg(F.sum("price").alias("gmv"))
 
 result.write.format("delta").mode("overwrite").save("s3a://gold/demo1_state_gmv")

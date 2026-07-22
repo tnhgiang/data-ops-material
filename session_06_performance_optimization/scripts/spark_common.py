@@ -1,4 +1,13 @@
+import logging
+
 from pyspark.sql import SparkSession
+
+LOG_FORMAT = "%(asctime)s %(levelname)s %(filename)s:%(lineno)d %(message)s"
+
+
+def get_logger(name):
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+    return logging.getLogger(name)
 
 
 def build_spark(app_name, extra=None):
