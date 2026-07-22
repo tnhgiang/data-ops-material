@@ -1,9 +1,15 @@
-# Session 06 — Performance & Cost Optimization
+# Session 6 — Performance & Cost Optimization
 
-Diagnose and fix real Spark/SQL bottlenecks with the **Measure → Find → Fix → Re-measure**
-loop. The demos teach *how to read the signals* (Spark UI / EXPLAIN); the labs and
-homework hand you **broken pipelines** and ask you to find the problem yourself, then
-prove the fix with before/after numbers.
+**Master Class DataOps for Modern Data Platforms · Session 6/11**
+
+Session 5 got data into a lakehouse. This session is about making it *fast*. You will
+learn to read the signals — Spark UI stage metrics, physical query plans, `EXPLAIN ANALYZE`
+— and use them to find real bottlenecks, not guesses. The pattern is always the same:
+**Measure → Find the root cause → Fix → Re-measure and keep both numbers**.
+
+The demos walk through the diagnosis loop live. The labs and homework hand you
+**broken pipelines** with no hint — your job is to reproduce the symptom, find the
+cause with evidence, fix it, and prove the fix with before/after numbers.
 
 ---
 
@@ -131,10 +137,12 @@ regenerate with `--scale large` and re-run the setup script.
 
 Helper scripts:
 - `scripts/get_num_files.py <delta_path>` — file count / size / rows of a Delta table.
-- `scripts/operations__compact_files.py <delta_path>` — `OPTIMIZE` a Delta table and
+- `scripts/operations/compact_files.py <delta_path>` — `OPTIMIZE` a Delta table and
   report the file count before/after.
-- `scripts/operations__vacuum.py <delta_path>` — `VACUUM` a Delta table (removes files
-  no longer referenced by the current version).
+- `scripts/operations/vacuum.py <delta_path> <retain_hours>` — `VACUUM` a Delta table
+  (removes files no longer referenced within the retention window).
+- `scripts/operations/clean_spark_tmp.sh` — wipe worker temp dirs and trim event logs
+  to the 5 most recent runs (run this if a job dies with `No space left on device`).
 
 ---
 
@@ -200,8 +208,10 @@ session_06_performance_optimization/
 │   ├── setup_delta_tables.py    ← bronze parquet → silver Delta
 │   ├── setup_lab2_table.py      ← replays the daily ingest history for Lab 2's table
 │   ├── get_num_files.py         ← file stats for a Delta table
-│   ├── operations__compact_files.py  ← OPTIMIZE a Delta table, report before/after
-│   └── operations__vacuum.py    ← VACUUM a Delta table
+│   └── operations/
+│       ├── compact_files.py     ← OPTIMIZE a Delta table, report before/after
+│       ├── vacuum.py            ← VACUUM a Delta table (configurable retention)
+│       └── clean_spark_tmp.sh   ← wipe worker /tmp + trim event logs to 5 newest
 ├── demo/                        ← 2 mentor demos (README inside)
 ├── labs/                        ← 3 broken labs (README + checklist inside)
 ├── homework/                    ← 3 broken homework (README + checklist inside)
