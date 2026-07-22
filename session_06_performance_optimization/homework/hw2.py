@@ -19,24 +19,16 @@ def risk_score(payment_type, installments, value):
     return float(base + installments * 2.0 + (value or 0.0) * 0.01)
 
 
-payments_scored = payments.withColumn(
-    "score", risk_score(F.col("payment_type"), F.col("payment_installments"), F.col("payment_value"))
+enriched = order_items.join(orders, "order_id").join(payments, "order_id")
+
+result = (
+    enriched
+    .withColumn("score", risk_score(F.col("payment_type"), F.col("payment_installments"), F.col("payment_value")))
+    .groupBy("order_status")
+    .agg(F.sum("score").alias("total_risk_score"))
 )
 
-r1 = orders.join(payments_scored, "order_id").groupBy("order_status").agg(F.sum("score").alias("s"))
-r2 = (
-    order_items.join(payments_scored, "order_id")
-    .groupBy("product_category")
-    .agg(F.sum("score").alias("s"))
-)
-r3 = payments_scored.groupBy("payment_type").agg(F.avg("score").alias("s"))
-
-log.info("risk score by order status:")
-r1.show()
-log.info("risk score by product category:")
-r2.show()
-log.info("risk score by payment type:")
-r3.show()
-log.info("hw2 done")
+result.show()
+log.info("hw2 done: %d rows", result.count())
 
 spark.stop()
