@@ -30,9 +30,8 @@ Wait for everything to go healthy (`docker compose ps`) — Vault, `postgres-sou
 Then create the empty Delta tables once:
 
 ```bash
-docker exec s07-spark-master /opt/spark/bin/spark-submit \
-  --jars /opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar,/opt/jars/postgresql-42.6.0.jar \
-  /jobs/init_schema.py
+JARS=/opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar,/opt/jars/postgresql-42.6.0.jar
+docker exec s07-spark-master /opt/spark/bin/spark-submit --jars $JARS /jobs/init_schema.py
 ```
 
 Airflow UI: http://localhost:8888 (airflow/airflow) · Vault UI: http://localhost:8200 (token `root-demo-token`) · Trino: http://localhost:8092 · MinIO console: http://localhost:9001 (minioadmin/minioadmin).
@@ -72,19 +71,25 @@ prints the tail of the audit trail (see step 6).
 
 Trino requires a password now (`file` password authenticator, see
 `conf/trino/password.db` / `conf/trino/password-authenticator.properties`).
-`query_trino.py` defaults to the demo bootstrap passwords below, or pass
-`--password` explicitly:
+Pass `--password` explicitly. Demo bootstrap credentials (dev/test only):
 
-| user | password |
-|---|---|
-| `admin` | `AdminDemo_2026!` |
-| `analyst` | `AnalystDemo_2026!` |
+> ⚠️ **Dev/test only.** These passwords are for classroom use. Never use hardcoded
+> credentials in a real deployment — rotate and inject via a secrets manager.
+
+| user | password | access |
+|---|---|---|
+| `admin` | `AdminDemo_2026!` | all columns, all regions |
+| `analyst` | `AnalystDemo_2026!` | masked PII, all regions |
+| `analyst_uk` | `AnalystUK_2026!` | masked PII, UK region only |
+| `analyst_us` | `AnalystUS_2026!` | masked PII, US region only |
 
 ```bash
-docker compose exec demo-cli python /scripts/query_trino.py --user admin \
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user admin --password AdminDemo_2026! \
   --sql "SELECT customer_id, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
 
-docker compose exec demo-cli python /scripts/query_trino.py --user analyst \
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user analyst --password AnalystDemo_2026! \
   --sql "SELECT customer_id, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
 ```
 
@@ -105,9 +110,10 @@ application.
 Then show defense in depth on the raw layer:
 
 ```bash
-docker compose exec demo-cli python /scripts/query_trino.py --user analyst \
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user analyst --password AnalystDemo_2026! \
   --sql "SELECT * FROM delta.bronze.customers LIMIT 5"
-# -> Access Denied: analyst has no privileges on the bronze schema at all
+# -> blocked: Trino ACL denies SELECT on bronze (rules.json) + MinIO trino-svc has no bronze bucket access (defense in depth)
 ```
 
 ## 6. Tail the audit trail

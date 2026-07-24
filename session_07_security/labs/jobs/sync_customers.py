@@ -1,9 +1,8 @@
 import argparse
 import logging
 
-from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, lit
-from security_utils import get_vault_secret
+from security_utils import get_spark_session, get_vault_secret
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("customer_sync")
@@ -16,19 +15,7 @@ ds = args.ds
 pg_secret = get_vault_secret("dataops/postgres_source")
 minio_secret = get_vault_secret("dataops/minio")
 
-spark = (
-    SparkSession.builder.appName("customer-sync")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .config("spark.hadoop.hive.metastore.uris", "thrift://hive-metastore:9083")
-    .config("spark.hadoop.fs.s3a.endpoint", minio_secret["endpoint"])
-    .config("spark.hadoop.fs.s3a.access.key", minio_secret["access_key"])
-    .config("spark.hadoop.fs.s3a.secret.key", minio_secret["secret_key"])
-    .config("spark.hadoop.fs.s3a.path.style.access", "true")
-    .config("spark.sql.warehouse.dir", "s3a://warehouse/")
-    .enableHiveSupport()
-    .getOrCreate()
-)
+spark = get_spark_session("customer-sync", minio_secret)
 spark.sparkContext.setLogLevel("DEBUG")
 
 jdbc_url = f"jdbc:postgresql://{pg_secret['host']}:{pg_secret['port']}/{pg_secret['database']}"
@@ -56,10 +43,10 @@ df_synced = df.withColumn("synced_at", lit(ds).cast("date"))
 (
     df_synced.write.format("delta")
     .mode("overwrite")
-    .option("path", "s3a://warehouse/bronze/customers_sync")
+    .option("path", "s3a://bronze/customers_sync")
     .saveAsTable("bronze.customers_sync")
 )
 
-print(f"synced {df_synced.count()} customers for {ds}")
+logger.info("synced %d customers for %s", df_synced.count(), ds)
 
 spark.stop()

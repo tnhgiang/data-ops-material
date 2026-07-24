@@ -26,6 +26,9 @@ x-airflow-common:
     # from Vault via hvac (Airflow's secrets backend only covers Connections).
     VAULT_ADDR: "http://vault:8200"
     VAULT_TOKEN: "root-demo-token"
+    # Jar paths as an Airflow Variable, read by the DAG via Variable.get("spark_jars").
+    AIRFLOW_VAR_SPARK_JARS: >-
+      /opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar,/opt/jars/postgresql-42.6.0.jar
     # Self-signed CA cert exported by the trino container -- lets reconcile()
     # verify TLS properly instead of verify=False.
     TRINO_CA_CERT: /opt/trino-certs/trino.pem
@@ -169,8 +172,14 @@ services:
     entrypoint: >
       /bin/sh -c "
         mc alias set local http://minio:9000 minioadmin minioadmin;
-        mc mb --ignore-existing local/warehouse;
-        echo 'MinIO warehouse bucket ready.';
+        mc mb --ignore-existing local/bronze local/silver local/gold;
+        mc admin user add local etl-svc etl-svc-2026;
+        mc admin policy attach local readwrite --user etl-svc;
+        printf '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":[\"arn:aws:s3:::silver\",\"arn:aws:s3:::silver/*\",\"arn:aws:s3:::gold\",\"arn:aws:s3:::gold/*\"]}]}' > /tmp/trino-policy.json;
+        mc admin policy create local trino-policy /tmp/trino-policy.json;
+        mc admin user add local trino-svc trino-svc-2026;
+        mc admin policy attach local trino-policy --user trino-svc;
+        echo 'MinIO buckets and service accounts ready.';
       "
 
   # --- Hive Metastore -------------------------------------------------------
@@ -269,7 +278,7 @@ services:
   # ("trino") and host ("localhost") names so Python/JDBC hostname
   # verification passes.
   trino:
-    image: trinodb/trino:435
+    image: trinodb/trino:445
     entrypoint: ["/bin/bash", "-c", "if [ ! -f /etc/trino/certs/keystore.p12 ]; then keytool -genkeypair -alias trino -keyalg RSA -keysize 2048 -validity 3650 -dname 'CN=trino, OU=demo, O=dataops-from-scratch' -ext 'SAN=dns:trino,dns:localhost' -keystore /etc/trino/certs/keystore.p12 -storetype PKCS12 -storepass demo-keystore-password -keypass demo-keystore-password && keytool -exportcert -rfc -alias trino -keystore /etc/trino/certs/keystore.p12 -storepass demo-keystore-password -file /etc/trino/certs/trino.pem; fi && /usr/lib/trino/bin/run-trino"]
     ports:
       - "8092:8080"

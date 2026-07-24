@@ -33,6 +33,26 @@ def get_vault_secret(path: str) -> dict:
     return response["data"]["data"]
 
 
+def get_spark_session(app_name: str, minio_secret: dict):
+    from pyspark.sql import SparkSession
+
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config(
+            "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        )
+        .config("spark.hadoop.hive.metastore.uris", "thrift://hive-metastore:9083")
+        .config("spark.hadoop.fs.s3a.endpoint", minio_secret["endpoint"])
+        .config("spark.hadoop.fs.s3a.access.key", minio_secret["access_key"])
+        .config("spark.hadoop.fs.s3a.secret.key", minio_secret["secret_key"])
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.sql.warehouse.dir", "s3a://silver/")
+        .enableHiveSupport()
+        .getOrCreate()
+    )
+
+
 def log_pii_access(job_name: str, table: str, columns: list, record_count: int, ds: str) -> None:
     record = {
         "event": "PII_ACCESS",

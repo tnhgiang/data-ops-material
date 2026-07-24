@@ -21,8 +21,8 @@ vault kv put secret/dataops/postgres_source \
   database="dataops_source"
 
 vault kv put secret/dataops/minio \
-  access_key="minioadmin" \
-  secret_key="minioadmin" \
+  access_key="etl-svc" \
+  secret_key="etl-svc-2026" \
   endpoint="http://minio:9000"
 
 vault kv put secret/dataops/trino \

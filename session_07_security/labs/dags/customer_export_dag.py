@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 from datetime import datetime
 
 from airflow.decorators import dag, task
@@ -25,6 +26,7 @@ MINIO_SECRET_KEY = "minioadmin"
 def lab1_customer_export():
     @task
     def export_segment_summary(ds=None):
+        logger = logging.getLogger(__name__)
         import psycopg2
         from minio import Minio
 
@@ -59,7 +61,7 @@ def lab1_customer_export():
             io.BytesIO(payload),
             len(payload),
         )
-        print(f"Exported {len(rows)} rows to exports/segment_summary_{ds}.csv")
+        logger.info("Exported %d rows to exports/segment_summary_%s.csv", len(rows), ds)
 
     export_segment_summary()
 

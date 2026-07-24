@@ -2,21 +2,14 @@ import logging
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
+from airflow.models import Variable
 from airflow.operators.bash import BashOperator
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator
 
 logger = logging.getLogger(__name__)
 
 SPARK_MASTER_CONTAINER = "s07-spark-master"
-JARS = ",".join(
-    [
-        "/opt/jars/delta-spark_2.12-3.2.0.jar",
-        "/opt/jars/delta-storage-3.2.0.jar",
-        "/opt/jars/hadoop-aws-3.3.4.jar",
-        "/opt/jars/aws-java-sdk-bundle-1.12.262.jar",
-        "/opt/jars/postgresql-42.6.0.jar",
-    ]
-)
+JARS = Variable.get("spark_jars")
 TRINO_HOST = "trino"
 TRINO_PORT = 8443
 AUDIT_LOG_PATH = "/opt/airflow/logs/audit/pii_access.log"

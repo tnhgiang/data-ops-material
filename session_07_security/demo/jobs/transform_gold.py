@@ -1,8 +1,7 @@
 import argparse
 
-from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, lit, when
-from security_utils import get_logger, get_vault_secret, log_pii_access
+from security_utils import get_logger, get_spark_session, get_vault_secret, log_pii_access
 
 logger = get_logger("transform_gold")
 
@@ -15,19 +14,7 @@ ds = args.ds
 
 minio_secret = get_vault_secret("dataops/minio")
 
-spark = (
-    SparkSession.builder.appName("transform-gold-customer-analytics")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .config("spark.hadoop.hive.metastore.uris", "thrift://hive-metastore:9083")
-    .config("spark.hadoop.fs.s3a.endpoint", minio_secret["endpoint"])
-    .config("spark.hadoop.fs.s3a.access.key", minio_secret["access_key"])
-    .config("spark.hadoop.fs.s3a.secret.key", minio_secret["secret_key"])
-    .config("spark.hadoop.fs.s3a.path.style.access", "true")
-    .config("spark.sql.warehouse.dir", "s3a://warehouse/")
-    .enableHiveSupport()
-    .getOrCreate()
-)
+spark = get_spark_session("transform-gold-customer-analytics", minio_secret)
 spark.sparkContext.setLogLevel("WARN")
 
 log_pii_access(

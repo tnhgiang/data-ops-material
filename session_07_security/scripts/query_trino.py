@@ -8,27 +8,16 @@ from trino.auth import BasicAuthentication
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("query_trino")
 
-DEFAULT_PASSWORDS = {
-    "admin": os.environ.get("ADMIN_PASSWORD", "AdminDemo_2026!"),
-    "analyst": os.environ.get("ANALYST_PASSWORD", "AnalystDemo_2026!"),
-    "analyst_uk": "AnalystUK_2026!",
-    "analyst_us": "AnalystUS_2026!",
-}
-
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--user", required=True)
-    parser.add_argument(
-        "--password", default=None, help="Defaults to the demo bootstrap password for --user"
-    )
+    parser.add_argument("--password", required=True)
     parser.add_argument("--sql", required=True)
     parser.add_argument("--host", default=os.environ.get("TRINO_HOST", "trino"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("TRINO_PORT", 8443)))
     args = parser.parse_args()
-    password = args.password or DEFAULT_PASSWORDS.get(args.user) or args.password
-    if not password:
-        raise RuntimeError(f"No password for user {args.user!r} — pass --password")
+    password = args.password
 
     ca_cert = os.environ.get("TRINO_CA_CERT", "")
     if not ca_cert or not os.path.exists(ca_cert):
