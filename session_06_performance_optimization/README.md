@@ -212,9 +212,9 @@ session_06_performance_optimization/
 │       ├── compact_files.py     ← OPTIMIZE a Delta table, report before/after
 │       ├── vacuum.py            ← VACUUM a Delta table (configurable retention)
 │       └── clean_spark_tmp.sh   ← wipe worker /tmp + trim event logs to 5 newest
-├── demo/                        ← 2 mentor demos (README inside)
-├── labs/                        ← 3 broken labs (README + checklist inside)
-├── homework/                    ← 3 broken homework (README + checklist inside)
+├── demo/                        ← 2 demos (README inside)
+├── labs/                        ← 3 labs (README + checklist inside)
+├── homework/                    ← 3 homework (README + checklist inside)
 ├── data/                        ← hw3.duckdb (gitignored)
 └── spark-events/                ← Spark event logs (read by History Server)
 ```

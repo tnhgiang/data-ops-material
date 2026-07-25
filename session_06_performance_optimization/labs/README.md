@@ -32,6 +32,41 @@ Swap `lab1.py` for `lab2.py` or `lab3.py`. Every completed run is saved at **htt
 
 **Business context:** a scheduled daily job reports item revenue for orders approved on a specific date. The job reads `silver/orders` (partitioned by `order_date`) and joins to `silver/order_items`.
 
+**Schema — `silver/orders`** *(partition key: `order_date`)*
+
+| Column | Type | Description |
+|---|---|---|
+| `order_id` | `string` | Unique order identifier, e.g. `ord_000000001` |
+| `customer_id` | `string` | Foreign key to customers, e.g. `cust_00000001` |
+| `order_status` | `string` | One of: `delivered`, `shipped`, `processing`, `cancelled`, `unavailable` |
+| `order_purchase_timestamp` | `timestamp` | When the customer placed the order |
+| `order_approved_at` | `timestamp` | Approval time (0–48 h after purchase) |
+| `order_delivered_timestamp` | `timestamp` | Delivery time (`null` for non-delivered orders) |
+| `order_estimated_delivery_date` | `date` | Estimated delivery (purchase date + 10 days) |
+| `order_channel` | `string` | One of: `web`, `mobile_app`, `marketplace` |
+| `device_type` | `string` | One of: `desktop`, `ios`, `android` |
+| `coupon_code` | `string` | Uppercase hex coupon code (present in ~20% of orders, else `null`) |
+| `customer_note` | `string` | 48-char hex freetext note |
+| `order_date` | `date` | Derived from `order_purchase_timestamp`; **partition column** |
+
+**Schema — `silver/order_items`** *(partition key: `order_date`)*
+
+| Column | Type | Description |
+|---|---|---|
+| `order_id` | `string` | Foreign key to orders |
+| `order_date` | `date` | Derived from the purchase timestamp of the referenced order; partition column |
+| `order_item_id` | `int` | Line-item sequence within the order (1–5) |
+| `product_id` | `string` | Product identifier, e.g. `prod_00001` |
+| `seller_id` | `string` | Seller identifier, e.g. `seller_00001` (hot seller in ~35% of rows) |
+| `product_category` | `string` | One of: `electronics`, `furniture`, `toys`, `health_beauty`, `sports`, `auto`, `books`, `garden` |
+| `product_name` | `string` | Category name + 12-char hex suffix |
+| `product_weight_g` | `int` | Product weight in grams (50–30,050) |
+| `product_length_cm` | `int` | Product length in cm (5–105) |
+| `product_height_cm` | `int` | Product height in cm (2–102) |
+| `product_width_cm` | `int` | Product width in cm (5–105) |
+| `price` | `double` | Item price, rounded to 2 dp (range 5–1,000) |
+| `shipping_charges` | `double` | Shipping fee, rounded to 2 dp (range 2–50) |
+
 **Where to look:**
 - History Server → Stages: note the input sizes and elapsed time of each stage.
 - History Server → SQL/DataFrame tab: what join strategy does Spark choose?
@@ -50,7 +85,24 @@ Swap `lab1.py` for `lab2.py` or `lab3.py`. Every completed run is saved at **htt
 
 ## Lab 2 — Daily-appended Delta table
 
-**Business context:** `silver/lab2_orders` is loaded once per day by the production pipeline. After weeks of daily ingestion, a simple daily operations report (orders and unique customers per day per status) has slowed to a crawl. The table itself is not large — the problem is in the physical layout.
+**Business context:** `silver/lab2_orders` is loaded once per day by the production pipeline. It holds the same schema as `silver/orders` — each daily run appends one partition from that table.
+
+**Schema — `silver/lab2_orders`** *(partition key: `order_date`; same columns as `silver/orders`)*
+
+| Column | Type | Description |
+|---|---|---|
+| `order_id` | `string` | Unique order identifier, e.g. `ord_000000001` |
+| `customer_id` | `string` | Foreign key to customers, e.g. `cust_00000001` |
+| `order_status` | `string` | One of: `delivered`, `shipped`, `processing`, `cancelled`, `unavailable` |
+| `order_purchase_timestamp` | `timestamp` | When the customer placed the order |
+| `order_approved_at` | `timestamp` | Approval time (0–48 h after purchase) |
+| `order_delivered_timestamp` | `timestamp` | Delivery time (`null` for non-delivered orders) |
+| `order_estimated_delivery_date` | `date` | Estimated delivery (purchase date + 10 days) |
+| `order_channel` | `string` | One of: `web`, `mobile_app`, `marketplace` |
+| `device_type` | `string` | One of: `desktop`, `ios`, `android` |
+| `coupon_code` | `string` | Uppercase hex coupon code (present in ~20% of orders, else `null`) |
+| `customer_note` | `string` | 48-char hex freetext note |
+| `order_date` | `date` | Derived from `order_purchase_timestamp`; partition column | After weeks of daily ingestion, a simple daily operations report (orders and unique customers per day per status) has slowed to a crawl. The table itself is not large — the problem is in the physical layout.
 
 **Setup note:** run `scripts/setup_lab2_table.py` once before starting this lab — it replays 21 days of the daily ingest job so the file layout matches what the production table looks like after weeks of running:
 
@@ -90,6 +142,22 @@ docker exec s06-spark-master /opt/spark/bin/spark-submit \
 |---|---|---|
 | `orders` | 5,000,000 (default) | one row per order |
 | `customers_scd2` | 2,000,000 | 100k customers × 20 history versions |
+
+**Schema — `orders`**
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `long` | Unique order identifier (`spark.range` sequence) |
+| `customer_id` | `long` | Foreign key to customer dimension (`id % 100_000`) |
+| `amount` | `double` | Order amount, rounded to 2 dp (range ≈ 10–510) |
+
+**Schema — `customers_scd2`**
+
+| Column | Type | Description |
+|---|---|---|
+| `customer_id` | `long` | Customer identifier (0–99,999; repeated across 20 versions) |
+| `customer_state` | `string` | Brazilian state code, one of: `SP`, `RJ`, `MG`, `PR`, `RS`, `BA` |
+| `is_current` | `boolean` | `true` only for the latest version (`version == 19`); all other rows are historical |
 
 **Where to look:**
 - `result.count()` from the broken run — is the number plausible?

@@ -68,26 +68,39 @@ python homework/hw3.py
 
 ## HW 3 — DuckDB daily report
 
-**Business context:** a daily report queries an `orders` table in DuckDB (loaded from bronze MinIO parquet). The report is slow, and re-running it on a different day produces different numbers for the same time window.
+**Business context:** a daily report filters `orders` by a single date. The data is already split into 22 daily files — one per day — but the query still reads every file on every run.
 
-> HW 3 reads bronze parquet through MinIO's S3 API — the MinIO stack must be up (`docker compose ps`).
-> Inspect `data/hw3.duckdb` from your host with DBeaver (New Connection → DuckDB → Path: `data/hw3.duckdb`, open read-only while the script is not running) or the CLI:
-> ```bash
-> duckdb data/hw3.duckdb "SELECT COUNT(*) FROM orders"
-> ```
+**Run:**
+```bash
+# from session_06_performance_optimization/
+python3 homework/hw3.py
+```
 
 **Where to look:**
-- `EXPLAIN ANALYZE` output printed by the script: `TABLE_SCAN` projected columns, row count, `ORDER BY` elapsed time.
-- Re-run on a different date — do the result numbers change?
+- `EXPLAIN ANALYZE` → `TABLE_SCAN` node: where is the date filter applied — `Filters` or `File Filters`?
+- `Total Files Read` — how many files does DuckDB open?
+- Compare against the actual file count in `data/orders_by_day/`
 
 **Evidence to capture (before fix):**
-- `TABLE_SCAN` projected column count from `EXPLAIN ANALYZE`
-- Elapsed time of the `ORDER BY` node
+- Value of `Total Files Read`
+- Which section the date filter appears in (`Filters` vs `File Filters`)
 
 **Acceptance criteria:**
-- The fixed query returns the same numbers on any re-run for the same reporting period.
-- `EXPLAIN ANALYZE` shows fewer columns projected in the scan.
-- Before/after elapsed time recorded.
+- `EXPLAIN ANALYZE` shows `Scanning Files: 1/22` and `Total Files Read: 1`
+- The date filter moves from `Filters` to `File Filters`
+- Do not change `DATE = "2026-07-07"` or the query logic — only change how data isgi organized and read
+
+**Hints:**
+
+<details>
+<summary>Hint 1</summary>
+DuckDB can only skip files if it knows which file covers which date — before opening any file. The current layout gives DuckDB no way to know that without reading the content first.
+</details>
+
+<details>
+<summary>Hint 2</summary>
+Two changes are required and must go together: reorganize the files so the folder name encodes the date (<code>order_date=2026-07-07/</code>), then tell DuckDB to use that information when scanning (<code>hive_partitioning=true</code>). Either change alone does nothing.
+</details>
 
 ---
 
