@@ -4,7 +4,7 @@ on:
   workflow_run:
     workflows: ["DataOps CI"]
     types: [completed]
-    branches: [main, "feat/*"]
+    branches: [main]
 
 jobs:
   deploy:
