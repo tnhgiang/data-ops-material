@@ -12,11 +12,13 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Pull latest code
-        run: git -C ${{ vars.REPO_PATH }} pull origin main
+        run: |
+          git -C ${{ vars.REPO_PATH }} fetch origin main
+          git -C ${{ vars.REPO_PATH }} reset --hard origin/main
 
       - name: Verify DAG loaded
         run: |
           sleep 10
           curl -f -u "airflow:airflow" \
-            http://localhost:8080/api/v1/dags/session_08_order_pipeline \
+            http://localhost:8888/api/v1/dags/session_08_order_pipeline \
             | python3 -c "import sys, json; d=json.load(sys.stdin); assert d['is_active'], 'DAG not active'"
