@@ -9,7 +9,7 @@ from dataops_common.notifications import notify_on_sla_miss
 
 with DAG(
     dag_id="session_08_order_pipeline",
-    description="Orders pipeline used as CI/CD test subject",
+    description="Orders pipeline",
     schedule="@daily",
     start_date=datetime(2026, 1, 1),
     catchup=False,
