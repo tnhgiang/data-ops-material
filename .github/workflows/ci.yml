@@ -1,0 +1,40 @@
+name: DataOps CI
+
+on:
+  push:
+    branches: [main, develop, "feat/*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: session_08_cicd
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint & format check
+        run: ruff check . && ruff format --check .
+
+      - name: Security scan
+        run: bandit -r demo/dags/ demo/jobs/ -ll
+
+      - name: Unit test + coverage
+        env:
+          PYTHONPATH: ${{ github.workspace }}/plugins
+        run: |
+          pytest demo/tests/ \
+            --cov=demo/dags --cov=demo/jobs \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=70
