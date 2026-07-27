@@ -14,7 +14,7 @@ jobs:
       - name: Pull latest code
         run: |
           git -C ${{ vars.REPO_PATH }} fetch origin main
-          git -C ${{ vars.REPO_PATH }} reset --hard origin/main
+          git -C ${{ vars.REPO_PATH }} checkout origin/main -- session_08_cicd/demo/dags/
 
       - name: Verify DAG loaded
         run: |
