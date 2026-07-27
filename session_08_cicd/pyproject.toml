@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["demo/tests"]
+
+[tool.bandit]
+exclude_dirs = ["demo/tests", "labs/tests"]
+skips = ["B101"]
