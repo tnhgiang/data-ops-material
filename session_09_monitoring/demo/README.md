@@ -2,7 +2,30 @@
 
 Stack: Prometheus + StatsD Exporter + Grafana + Great Expectations + Slack Webhook + Airflow.
 
-## 1. Start the stack
+## Architecture
+
+Session 09 runs as a second Docker Compose stack alongside Session 07:
+
+```
+session_07_security/    ← Airflow (webserver + scheduler + worker)
+session_09_monitoring/  ← Prometheus + StatsD Exporter + Grafana
+```
+
+The two stacks are on separate Docker networks. Airflow emits metrics via UDP to
+`host.docker.internal:8125`, which forwards to the StatsD Exporter on the host's port 8125.
+
+```
+Airflow → UDP → host.docker.internal:8125 → StatsD Exporter → Prometheus scrape → Grafana
+```
+
+Both stacks must be running before the demo:
+
+```bash
+cd session_07_security && docker-compose up -d
+cd session_09_monitoring && docker-compose up -d
+```
+
+## 1. Start the monitoring stack
 
 ```bash
 cd session_09_monitoring
@@ -10,86 +33,113 @@ docker-compose up -d
 docker-compose ps
 ```
 
-- Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000` (admin/admin)
-- StatsD Exporter metrics: `http://localhost:9102/metrics`
+| Service | URL | Account | Password |
+|---|---|---|---|
+| Prometheus | `http://localhost:9090` | — | — |
+| Grafana | `http://localhost:3000` | `admin` | `admin` |
+| StatsD Exporter metrics | `http://localhost:9102/metrics` | — | — |
+| Airflow | `http://localhost:8888` | `airflow` | `airflow` |
 
-## 2. Configure Airflow to emit metrics via StatsD
+## 2. Airflow StatsD config
 
-Add to Airflow environment (docker-compose or airflow.cfg):
+Already configured in `session_07_security/docker-compose.yml` under `x-airflow-common`:
 
 ```yaml
-AIRFLOW__METRICS__STATSD_ON: "True"
-AIRFLOW__METRICS__STATSD_HOST: "statsd-exporter"
-AIRFLOW__METRICS__STATSD_PORT: "8125"
-AIRFLOW__METRICS__STATSD_PREFIX: "airflow"
+AIRFLOW__METRICS__STATSD_ON: 'true'
+AIRFLOW__METRICS__STATSD_HOST: 'host.docker.internal'
+AIRFLOW__METRICS__STATSD_PORT: '8125'
+AIRFLOW__METRICS__STATSD_PREFIX: 'airflow'
 ```
 
-Verify at `http://localhost:9090/targets` — the `airflow` job must be UP.
+> Note: StatsD Exporter listens on UDP port **9125** inside the container, mapped to host port **8125**
+> (`8125:9125/udp`). Airflow sends to `host.docker.internal:8125` which routes to the exporter.
 
-## 3. Import Airflow dashboard into Grafana
+Verify Prometheus is scraping: `http://localhost:9090/targets` — `airflow` job must be **UP**.
 
-1. Connections → Data Sources → Add Prometheus (`http://prometheus:9090`)
-2. Dashboards → Import → upload `grafana/dashboards/airflow_overview.json`
+## 3. Grafana dashboards
 
-Key panels:
+Dashboards are auto-provisioned from `grafana/dashboards/` on startup — no manual import needed.
 
-| Panel | Metric | What to look for |
-|---|---|---|
-| DAG Success Rate | `rate(airflow_dagrun_duration_success[5m])` | Drop → recent failures |
-| Task Duration p95 | `histogram_quantile(0.95, rate(airflow_task_duration_bucket[10m]))` | Spike → slow tasks |
-| Scheduler Heartbeat | `airflow_scheduler_heartbeat` | Must stay > 0 |
-| Executor Queue | `airflow_executor_queued_tasks` | Rising queue → executor bottleneck |
+| Dashboard | What it shows |
+|---|---|
+| Airflow cluster dashboard | Scheduler heartbeat, dagbag size, executor queue, task success/fail |
+| Airflow DAG dashboard | Per-DAG duration, schedule delay, task breakdown |
 
-> Flow: Airflow → UDP → StatsD Exporter → HTTP → Prometheus scrape → Grafana pull. Debug from right to left when a metric is missing.
+Metrics use the `af_agg_*` prefix (mapped by `statsd/statsd.yaml`). Key ones:
 
-## 4. Run the pipeline — Demo 2
+| Metric | What to look for |
+|---|---|
+| `af_agg_scheduler_heartbeat` | Must stay > 0; drop → scheduler dead |
+| `af_agg_ti_failures` | Any increment → task failed |
+| `af_agg_executor_queued_tasks` | Rising → executor bottleneck |
+| `af_agg_dagrun_duration_success` | Spike → pipeline slowing down |
+
+> Flow: Airflow → UDP → StatsD Exporter → HTTP → Prometheus scrape (15s) → Grafana pull.
+> Debug right to left when a metric is missing.
+
+## 4. Grafana alert — DAG task failure
+
+Alert rule `DAG Task Failure` is configured in folder `DataOps Alerts`:
+
+- **Condition:** `increase(af_agg_ti_failures{airflow_id="airflow"}[5m]) > 0`
+- **For:** 0s — fires immediately on first failure
+- **Contact point:** Slack webhook
+- **Repeat:** every 1 hour while still failing
+
+When a GE checkpoint fails, the DAG task also fails → `af_agg_ti_failures` increments →
+Grafana alert fires within 1 minute. The DAG additionally sends a direct Slack alert with the
+list of failed expectations before raising the exception.
+
+## 5. Run the GE demo
+
+Generate sample data:
 
 ```bash
-# Trigger with clean data
-airflow dags trigger session_09_order_pipeline
-
-# Trigger with broken data to show GE failure + Slack alert
-cp demo/data/orders_broken.parquet /tmp/orders_test.parquet
-airflow dags trigger session_09_order_pipeline
+cd session_09_monitoring/demo
+python data/generate_data.py
+# Creates:
+#   data/orders_clean.parquet  — 10,000 valid rows
+#   data/orders_broken.parquet — 200 null order_id, 150 negative amount, 10 duplicate order_id
 ```
 
-Observe:
-- `ge_checkpoint_bronze` fails
-- Slack receives alert with list of failed expectations
-- Data Docs at `demo/great_expectations/uncommitted/data_docs/`
-
-## 5. GE Expectation Suite
-
-Suite defined in `demo/great_expectations/expectations/orders_bronze_suite.json`.
-
-To regenerate from clean data:
+Run validation manually:
 
 ```python
 import great_expectations as gx
+import pandas as pd
 
-context = gx.get_context()
-suite = context.add_expectation_suite("orders_bronze_suite")
-validator = context.sources.pandas_default.read_parquet(
-    path="demo/data/orders_clean.parquet",
-    asset_name="orders_bronze",
-    expectation_suite=suite,
-)
+context = gx.get_context(context_root_dir="great_expectations")
 
-validator.expect_column_values_to_not_be_null(column="order_id")
-validator.expect_column_values_to_be_unique(column="order_id")
-validator.expect_column_values_to_be_between(column="amount", min_value=0, max_value=1_000_000)
-validator.expect_column_values_to_not_be_null(column="order_date")
-validator.expect_column_values_to_be_in_set(
-    column="status", value_set=["pending", "paid", "cancelled", "refunded"]
-)
-validator.expect_table_row_count_to_be_between(min_value=1)
+# Clean data — all 6 expectations pass
+df_clean = pd.read_parquet("data/orders_clean.parquet")
 
-validator.save_expectation_suite()
+# Broken data — 3 expectations fail:
+# expect_column_values_to_not_be_null, expect_column_values_to_be_unique,
+# expect_column_values_to_be_between
+df_broken = pd.read_parquet("data/orders_broken.parquet")
 ```
+
+View HTML report after a checkpoint run:
+
+```bash
+open great_expectations/uncommitted/data_docs/local_site/index.html
+```
+
+## 6. GE Expectation Suite
+
+Suite: `great_expectations/expectations/orders_bronze_suite.json` — 6 expectations:
+
+| Expectation | Column | Rule |
+|---|---|---|
+| not_be_null | order_id | No null PKs |
+| be_unique | order_id | No duplicates |
+| be_between | amount | 0 – 1,000,000 |
+| not_be_null | order_date | Date required |
+| be_in_set | status | pending / paid / cancelled / refunded |
+| row_count_between | — | min 1 row |
 
 ## Demo simplifications
 
-- Slack webhook is a test URL — real deployment uses a proper channel with on-call rotation.
-- GE context uses local filesystem — production uses a shared backend (S3 + shared Data Docs site).
-- StatsD exporter runs as a sidecar — production typically uses the Prometheus push gateway or a managed metrics service.
+- Slack alert goes to a test webhook — real setup uses a proper on-call channel.
+- GE uses local filesystem context — production uses S3 backend with a shared Data Docs site.
+- StatsD exporter runs as a separate container — production typically co-locates it as a sidecar.
