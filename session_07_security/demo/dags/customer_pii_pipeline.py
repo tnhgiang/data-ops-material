@@ -2,14 +2,12 @@ import logging
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
-from airflow.models import Variable
 from airflow.operators.bash import BashOperator
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator
 
 logger = logging.getLogger(__name__)
 
 SPARK_MASTER_CONTAINER = "s07-spark-master"
-JARS = Variable.get("spark_jars")
 TRINO_HOST = "trino"
 TRINO_PORT = 8443
 AUDIT_LOG_PATH = "/opt/airflow/logs/audit/pii_access.log"
@@ -38,7 +36,6 @@ def customer_pii_pipeline():
         task_id="ingest_bronze",
         bash_command=f"""
             docker exec {SPARK_MASTER_CONTAINER} /opt/spark/bin/spark-submit \
-              --jars {JARS} \
               /jobs/ingest_bronze.py --ds {{{{ ds }}}}
         """,
     )
@@ -47,7 +44,6 @@ def customer_pii_pipeline():
         task_id="transform_silver",
         bash_command=f"""
             docker exec {SPARK_MASTER_CONTAINER} /opt/spark/bin/spark-submit \
-              --jars {JARS} \
               /jobs/transform_silver.py --ds {{{{ ds }}}}
         """,
     )
@@ -56,7 +52,6 @@ def customer_pii_pipeline():
         task_id="transform_gold",
         bash_command=f"""
             docker exec {SPARK_MASTER_CONTAINER} /opt/spark/bin/spark-submit \
-              --jars {JARS} \
               /jobs/transform_gold.py --ds {{{{ ds }}}}
         """,
     )

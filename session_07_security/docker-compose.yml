@@ -26,9 +26,6 @@ x-airflow-common:
     # from Vault via hvac (Airflow's secrets backend only covers Connections).
     VAULT_ADDR: "http://vault:8200"
     VAULT_TOKEN: "root-demo-token"
-    # Jar paths as an Airflow Variable, read by the DAG via Variable.get("spark_jars").
-    AIRFLOW_VAR_SPARK_JARS: >-
-      /opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar,/opt/jars/postgresql-42.6.0.jar
     # Self-signed CA cert exported by the trino container -- lets reconcile()
     # verify TLS properly instead of verify=False.
     TRINO_CA_CERT: /opt/trino-certs/trino.pem
@@ -243,6 +240,7 @@ services:
       - ./labs:/labs:ro
       - ./logs/audit:/var/log/pii_audit
       - ../session_05_pyspark_lakehouse/jars:/opt/jars:ro
+      - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
     depends_on:
       vault:
         condition: service_healthy
@@ -267,6 +265,7 @@ services:
       - ./labs:/labs:ro
       - ./logs/audit:/var/log/pii_audit
       - ../session_05_pyspark_lakehouse/jars:/opt/jars:ro
+      - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
     depends_on:
       - spark-master
     restart: always
