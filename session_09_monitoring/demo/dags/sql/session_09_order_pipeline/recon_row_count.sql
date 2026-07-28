@@ -1,5 +1,5 @@
 SELECT (
-    SELECT COUNT(*) FROM bronze.orders
+    SELECT COUNT(*) FROM source_orders WHERE order_date = '{{ ds }}'
 ) = (
-    SELECT COUNT(*) FROM gold.fact_orders
-) AS row_count_match;
+    SELECT COUNT(*) FROM gold_fact_orders WHERE order_date = '{{ ds }}'
+)

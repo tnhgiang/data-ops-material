@@ -1,60 +1,32 @@
 {
-  "data_asset_type": null,
   "expectation_suite_name": "orders_bronze_suite",
   "expectations": [
     {
       "expectation_type": "expect_column_values_to_not_be_null",
-      "kwargs": {
-        "column": "order_id"
-      },
-      "meta": {}
+      "kwargs": {"column": "order_id"}
     },
     {
       "expectation_type": "expect_column_values_to_be_unique",
-      "kwargs": {
-        "column": "order_id"
-      },
-      "meta": {}
+      "kwargs": {"column": "order_id"}
     },
     {
       "expectation_type": "expect_column_values_to_be_between",
-      "kwargs": {
-        "column": "amount",
-        "max_value": 1000000,
-        "min_value": 0
-      },
-      "meta": {}
+      "kwargs": {"column": "amount", "min_value": 0, "max_value": 1000000}
     },
     {
       "expectation_type": "expect_column_values_to_not_be_null",
-      "kwargs": {
-        "column": "order_date"
-      },
-      "meta": {}
+      "kwargs": {"column": "order_date"}
     },
     {
       "expectation_type": "expect_column_values_to_be_in_set",
       "kwargs": {
         "column": "status",
-        "value_set": [
-          "pending",
-          "paid",
-          "cancelled",
-          "refunded"
-        ]
-      },
-      "meta": {}
+        "value_set": ["pending", "paid", "cancelled", "refunded"]
+      }
     },
     {
       "expectation_type": "expect_table_row_count_to_be_between",
-      "kwargs": {
-        "min_value": 1
-      },
-      "meta": {}
+      "kwargs": {"min_value": 1}
     }
-  ],
-  "ge_cloud_id": null,
-  "meta": {
-    "great_expectations_version": "0.18.19"
-  }
+  ]
 }
