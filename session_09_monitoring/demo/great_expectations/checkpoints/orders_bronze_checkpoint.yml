@@ -1,0 +1,4 @@
+name: orders_bronze_checkpoint
+config_version: 1
+class_name: SimpleCheckpoint
+expectation_suite_name: orders_bronze_suite
