@@ -5,14 +5,26 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 
+# TODO (Finding 1 & 2): replace hardcoded credentials with Vault lookups.
+# Un-comment the block below and fill in the correct Vault paths.
+# from airflow.hooks.base import BaseHook
+# from airflow.models import Variable
+#
+# def _get_vault_conn(conn_id):
+#     conn = BaseHook.get_connection(conn_id)
+#     return conn
+#
+# DB connection — Vault path: "airflow/connections/postgres_source_lab"
+# MINIO connection — Vault path: "airflow/connections/minio_lab"
+
 DB_HOST = "postgres-source"
 DB_PORT = 5432
 DB_NAME = "dataops_source"
 DB_USER = "postgres"
-DB_PASSWORD = "postgres"
+DB_PASSWORD = "postgres"  # Finding 1: hardcoded credential
 
 MINIO_ENDPOINT = "minio:9000"
-MINIO_ACCESS_KEY = "minioadmin"
+MINIO_ACCESS_KEY = "minioadmin"  # Finding 2: hardcoded credential
 MINIO_SECRET_KEY = "minioadmin"
 
 
@@ -30,6 +42,8 @@ def lab1_customer_export():
         import psycopg2
         from minio import Minio
 
+        # TODO (Finding 3): "postgres" is a superuser account.
+        # Create and use a read-only account instead (see demo's init_source.sql for reference).
         conn = psycopg2.connect(
             host=DB_HOST,
             port=DB_PORT,

@@ -38,13 +38,21 @@ Airflow UI: http://localhost:8888 (airflow/airflow) · Vault UI: http://localhos
 
 ## 2. Prove there are no hardcoded secrets
 
+Use [gitleaks](https://github.com/gitleaks/gitleaks) — scans git history and working tree for leaked secrets (API keys, tokens, passwords matching known patterns):
+
 ```bash
-grep -rniE "password|secret|access.?key" demo/dags/ demo/jobs/
+brew install gitleaks   # or: https://github.com/gitleaks/gitleaks/releases
+
+# scan full git history
+gitleaks git --no-banner .
+
+# scan only staged files before committing
+gitleaks protect --staged --no-banner
 ```
 
-Every hit is either a Vault path string (`"dataops/minio"`), a dict key name, or a
-comment — never a literal credential. Compare with the injected
-`DB_PASSWORD = "SuperSecret123!"` from the lab spec.
+Running against `demo/dags/` and `demo/jobs/` returns no findings — no credential values, only Vault path strings (`"dataops/minio"`) and dict key names. Compare with `labs/dags/customer_export_dag.py` to see the contrast.
+
+> **Note:** gitleaks catches high-confidence patterns (API keys, tokens, private keys). Generic passwords like `"postgres"` require code review or a custom rule — no tool is a silver bullet.
 
 ## 3. Look at what's actually in Vault
 

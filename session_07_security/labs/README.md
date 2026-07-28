@@ -6,7 +6,7 @@ Three hands-on labs on the demo stack (`session_07_security/docker-compose.yml` 
 |---|---|---|---|
 | Lab 1 | Secrets Management | `dags/customer_export_dag.py` | 3 |
 | Lab 2 | PII — Data Minimization & Masking | `jobs/build_marketing_customers.py`, `trino_rules_patch.json` | 3 |
-| Lab 3 | Least Privilege, Log Hygiene & Audit | `jobs/sync_customers.py`, `sql/init_reporting.sql` | 6 |
+| Lab 3 | Least Privilege & Log Hygiene | `jobs/sync_customers.py`, `sql/init_reporting.sql` | 3 |
 
 ## Rules
 
@@ -94,21 +94,19 @@ docker compose restart trino
 
 ---
 
-## Lab 3 — Least Privilege, Log Hygiene & Audit
+## Lab 3 — Least Privilege & Log Hygiene
 
 **Files:** `jobs/sync_customers.py`, `sql/init_reporting.sql`
 
 An intern was assigned to write a customer sync job from the source system into the lakehouse staging area, plus a SQL script to create a service account for an upcoming reporting system. The code runs correctly and produces accurate numbers.
 
-An internal PCI-DSS/PDPA audit **flagged this pair of files with 6 findings**. Your task: identify all six, explain the risk of each, fix them, and demonstrate the fixes.
+An internal audit **flagged this pair of files with 3 findings**. Each finding is marked with a `# TODO` comment in the code. Your task: identify each one, explain the risk, and fix it.
 
 **Available resources:**
-- `demo/jobs/security_utils.py` — read it carefully for what it provides
-- `sql/init_source.sql` from the demo — compare how `etl_reader` is created there
-- Demo audit log at `logs/audit/pii_access.log`
+- `demo/jobs/security_utils.py` — read it for what helpers are available
+- `demo/sql/init_source.sql` — see how `etl_reader` is created as a reference for least privilege
 
 **Acceptance criteria:**
-1. After running the fixed job, **no PII values appear anywhere in the job output or logs**. Prove with grep on the logs.
-2. Every read/write of PII data leaves an **audit record** answering: which job, which table, which columns, how many rows, when. Audit records must not contain PII values.
-3. The reporting service account has only the minimum privileges needed to read the customer table. Prove: attempting `INSERT`/`DROP` with that account must be denied.
-4. The job still functions correctly: `bronze.customers_sync` has the same row count as before the fix.
+1. After running the fixed job, **no PII values appear in logs or stdout**. Prove: `docker logs s07-spark-master 2>&1 | grep -i "phone\|cccd\|full_name"` returns nothing.
+2. The reporting service account has only `SELECT` on `raw.customers`. Prove: `INSERT` with that account must be denied.
+3. The job still produces the correct row count in `bronze.customers_sync`.
