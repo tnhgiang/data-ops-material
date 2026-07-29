@@ -3,7 +3,7 @@
 # Reuses the Delta/S3A/Postgres jars already downloaded in session_05 (mounted read-only).
 x-airflow-common:
   &airflow-common
-  image: apache/airflow:2.9.0
+  build: .
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -29,15 +29,13 @@ x-airflow-common:
     # Self-signed CA cert exported by the trino container -- lets reconcile()
     # verify TLS properly instead of verify=False.
     TRINO_CA_CERT: /opt/trino-certs/trino.pem
-    _PIP_ADDITIONAL_REQUIREMENTS: >-
-      apache-airflow-providers-hashicorp hvac==2.3.0 trino==0.328.0
-      psycopg2-binary==2.9.9 minio==7.2.7
+    AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
   volumes:
     - ./demo/dags:/opt/airflow/dags
     - ./labs:/opt/airflow/dags/labs
     - ./logs:/opt/airflow/logs
+    - ./demo/jobs:/opt/airflow/jobs
     - ./conf/trino/certs:/opt/trino-certs:ro
-    - /var/run/docker.sock:/var/run/docker.sock
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on

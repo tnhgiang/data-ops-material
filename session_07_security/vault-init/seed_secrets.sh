@@ -43,4 +43,13 @@ vault kv put secret/airflow/connections/postgres_source_conn \
   port="5432" \
   schema="dataops_source"
 
+# 3. Lab 1 secret — postgres_source_lab starts as superuser (Finding 3);
+#    after creating lab_reader, students update this secret and retest.
+vault kv put secret/dataops/postgres_source_lab \
+  username="postgres" \
+  password="postgres" \
+  host="postgres-source" \
+  port="5432" \
+  database="dataops_source"
+
 echo "Vault secrets seeded."

@@ -2,15 +2,28 @@ import logging
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
-from airflow.operators.bash import BashOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator
 
 logger = logging.getLogger(__name__)
 
-SPARK_MASTER_CONTAINER = "s07-spark-master"
 TRINO_HOST = "trino"
 TRINO_PORT = 8443
 AUDIT_LOG_PATH = "/opt/airflow/logs/audit/pii_access.log"
+SPARK_CONF = {"spark.driver.host": "airflow-worker", "spark.driver.bindAddress": "0.0.0.0"}
+PY_FILES = "/opt/airflow/jobs/security_utils.py"
+
+
+def _spark_submit(task_id: str, application: str) -> SparkSubmitOperator:
+    return SparkSubmitOperator(
+        task_id=task_id,
+        application=application,
+        conn_id="spark_default",
+        application_args=["--ds", "{{ ds }}"],
+        py_files=PY_FILES,
+        conf=SPARK_CONF,
+        verbose=False,
+    )
 
 
 @dag(
@@ -32,29 +45,9 @@ def customer_pii_pipeline():
         sql="sql/customer_pii_pipeline/check_source.sql",
     )
 
-    ingest_bronze = BashOperator(
-        task_id="ingest_bronze",
-        bash_command=f"""
-            docker exec {SPARK_MASTER_CONTAINER} /opt/spark/bin/spark-submit \
-              /jobs/ingest_bronze.py --ds {{{{ ds }}}}
-        """,
-    )
-
-    transform_silver = BashOperator(
-        task_id="transform_silver",
-        bash_command=f"""
-            docker exec {SPARK_MASTER_CONTAINER} /opt/spark/bin/spark-submit \
-              /jobs/transform_silver.py --ds {{{{ ds }}}}
-        """,
-    )
-
-    transform_gold = BashOperator(
-        task_id="transform_gold",
-        bash_command=f"""
-            docker exec {SPARK_MASTER_CONTAINER} /opt/spark/bin/spark-submit \
-              /jobs/transform_gold.py --ds {{{{ ds }}}}
-        """,
-    )
+    ingest_bronze = _spark_submit("ingest_bronze", "/opt/airflow/jobs/ingest_bronze.py")
+    transform_silver = _spark_submit("transform_silver", "/opt/airflow/jobs/transform_silver.py")
+    transform_gold = _spark_submit("transform_gold", "/opt/airflow/jobs/transform_gold.py")
 
     @task
     def reconcile(ds=None):

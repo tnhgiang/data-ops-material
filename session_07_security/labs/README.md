@@ -23,14 +23,11 @@ The `labs/` directory is already mounted into both Airflow and Spark — **no fi
 Edit lab files directly on the host — changes reflect inside containers immediately.
 
 ```bash
-# Run a Spark job
-JARS=/opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar,/opt/jars/postgresql-42.6.0.jar
-
 # Lab 2
-docker exec s07-spark-master /opt/spark/bin/spark-submit --jars $JARS /labs/jobs/build_marketing_customers.py --ds <YYYY-MM-DD>
+docker exec s07-spark-master /opt/spark/bin/spark-submit /labs/jobs/build_marketing_customers.py --ds <YYYY-MM-DD>
 
 # Lab 3
-docker exec s07-spark-master /opt/spark/bin/spark-submit --jars $JARS /labs/jobs/sync_customers.py --ds <YYYY-MM-DD>
+docker exec s07-spark-master /opt/spark/bin/spark-submit /labs/jobs/sync_customers.py --ds <YYYY-MM-DD>
 
 # Lab 3 SQL
 docker exec -i session_07_security-postgres-source-1 \
@@ -59,6 +56,51 @@ This week the security team scanned the repository and **flagged this DAG with 3
 2. DAG runs green and the CSV still appears in MinIO.
 3. The Postgres connection does not use an account with more privileges than this job needs.
 4. Explain: if this file had already been committed to Git, is fixing the code enough? What else needs to happen?
+
+**How to fix:**
+
+*F1 + F2 — pull all credentials from Vault directly via `hvac` (same pattern as demo Spark jobs):*
+```python
+import os
+import hvac
+
+vault = hvac.Client(url=os.environ["VAULT_ADDR"], token=os.environ["VAULT_TOKEN"])
+
+# F1: DB credentials from Vault
+pg_secret = vault.secrets.kv.v2.read_secret_version(
+    path="dataops/postgres_source_lab", raise_on_deleted_version=True
+)["data"]["data"]
+
+conn = psycopg2.connect(
+    host=pg_secret["host"], port=int(pg_secret["port"]),
+    dbname=pg_secret["database"], user=pg_secret["username"], password=pg_secret["password"],
+)
+
+# F2: MinIO credentials from Vault
+minio_secret = vault.secrets.kv.v2.read_secret_version(
+    path="dataops/minio", raise_on_deleted_version=True
+)["data"]["data"]
+
+client = Minio(minio_secret["endpoint"].replace("http://", ""),
+               access_key=minio_secret["access_key"],
+               secret_key=minio_secret["secret_key"], secure=False)
+```
+Delete all hardcoded constants (`DB_*`, `MINIO_*`) at the top of the file.
+
+*F3 — replace superuser account with least-privilege role:*
+```sql
+-- run inside postgres-source
+CREATE USER lab_reader WITH PASSWORD 'LabReader_2026!';
+GRANT CONNECT ON DATABASE dataops_source TO lab_reader;
+GRANT USAGE ON SCHEMA raw TO lab_reader;
+GRANT SELECT ON raw.customers TO lab_reader;
+```
+Then update the Vault secret — no code change needed:
+```bash
+docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=root-demo-token s07-vault \
+  vault kv patch secret/dataops/postgres_source_lab \
+  username="lab_reader" password="LabReader_2026!"
+```
 
 ---
 
@@ -91,6 +133,41 @@ docker compose restart trino
 2. User `marketing` can query `gold.marketing_customers` with phone/email partially masked; **all other tables** → Access Denied.
 3. Users `admin` and `analyst` are unaffected.
 4. Demonstrate with actual query output for all three users.
+
+**How to fix:**
+
+*F1 — drop excess PII columns, replace raw financials with tier:*
+```python
+from pyspark.sql import functions as F
+
+df_out = (
+    df
+    .withColumn("balance_tier",
+        F.when(F.col("account_balance") < 50_000_000, "low")
+         .when(F.col("account_balance") < 200_000_000, "medium")
+         .otherwise("high"))
+    .withColumn("updated_at", F.lit(ds).cast("date"))
+    .select("customer_id", "segment", "region", "registered_at",
+            "phone", "email", "balance_tier", "updated_at")
+)
+```
+
+*F2 — mask phone/email at query layer via Trino (not in Spark):*
+
+Do NOT mask in the Spark job — if you write masked values to disk, `admin` also loses access to the real values. Masking belongs in `trino_rules_patch.json`:
+```json
+"columns": [
+  { "name": "phone", "mask": "regexp_replace(phone, '(\\d{3})\\d{4}(\\d{3})', '$1****$2')" },
+  { "name": "email", "mask": "regexp_replace(email, '(^[^@]{2})[^@]+(@.+)', '$1***$2')" }
+]
+```
+
+*F3 — restrict `marketing` to only `gold.marketing_customers` in Trino:*
+
+Edit `labs/trino_rules_patch.json` so `marketing` has `SELECT` on exactly one table, and is denied everything else. Merge into `conf/trino/rules.json` then restart Trino:
+```bash
+docker compose restart trino
+```
 
 ---
 

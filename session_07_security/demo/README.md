@@ -30,8 +30,7 @@ Wait for everything to go healthy (`docker compose ps`) — Vault, `postgres-sou
 Then create the empty Delta tables once:
 
 ```bash
-JARS=/opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar,/opt/jars/postgresql-42.6.0.jar
-docker exec s07-spark-master /opt/spark/bin/spark-submit --jars $JARS /jobs/init_schema.py
+docker exec s07-spark-master /opt/spark/bin/spark-submit /jobs/init_schema.py
 ```
 
 Airflow UI: http://localhost:8888 (airflow/airflow) · Vault UI: http://localhost:8200 (token `root-demo-token`) · Trino: http://localhost:8092 · MinIO console: http://localhost:9001 (minioadmin/minioadmin).
@@ -41,7 +40,10 @@ Airflow UI: http://localhost:8888 (airflow/airflow) · Vault UI: http://localhos
 Use [gitleaks](https://github.com/gitleaks/gitleaks) — scans git history and working tree for leaked secrets (API keys, tokens, passwords matching known patterns):
 
 ```bash
+# MacOs
 brew install gitleaks   # or: https://github.com/gitleaks/gitleaks/releases
+# Windows
+winget install gitleaks
 
 # scan full git history
 gitleaks git --no-banner .
@@ -101,14 +103,20 @@ docker compose exec demo-cli python /scripts/query_trino.py \
   --sql "SELECT customer_id, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
 ```
 
-Connecting with any other tool (CLI, JDBC, DBeaver)? Use **HTTPS on port
-8443** and set both the username *and* password explicitly — e.g. Trino CLI:
-`trino --server https://localhost:8443 --insecure --user admin --password`
-(it will prompt), or JDBC URL
-`jdbc:trino://localhost:8443/delta/gold?SSL=true&SSLVerification=NONE`.
-`SSLVerification=NONE` / `--insecure` is needed because the demo generates a
-self-signed certificate at container startup; port 8092 stays plain-HTTP for
-the internal healthcheck only and rejects authenticated queries.
+Connecting with DBeaver or any JDBC tool? Use **HTTPS port 8443** with the
+self-signed cert bundled at `conf/trino/certs/trino-truststore.jks`
+(password: `changeit`). Paste this as the JDBC URL:
+
+```
+jdbc:trino://localhost:8443/delta/gold?SSL=true&SSLTrustStorePath=<absolute-path>/session_07_security/conf/trino/certs/trino-truststore.jks&SSLTrustStorePassword=changeit&SSLTrustStoreType=JKS
+```
+
+Replace `<absolute-path>` with the full path on your machine (`pwd` inside
+`session_07_security` gives it). Trino CLI: `trino --server
+https://localhost:8443 --insecure --user admin --password` (`--insecure`
+skips cert verification — acceptable for CLI, but JDBC clients should use
+the truststore above). Port 8092 is plain-HTTP for the internal healthcheck
+only and rejects authenticated queries.
 
 `admin` sees real phone/email/cccd. `analyst` sees `phone`/`email` masked
 (`090****678`, `jo***@gmail.com`) and `cccd` as `NULL` — same query, same table,
@@ -124,7 +132,54 @@ docker compose exec demo-cli python /scripts/query_trino.py \
 # -> blocked: Trino ACL denies SELECT on bronze (rules.json) + MinIO trino-svc has no bronze bucket access (defense in depth)
 ```
 
-## 6. Tail the audit trail
+## 6. Row-level filtering — analyst_uk vs analyst_us
+
+`analyst_uk` and `analyst_us` are scoped analysts: same masking as `analyst`,
+but each sees only their own region's rows. The enforcement lives in
+`conf/trino/rules.json` under the `tables` section — the `"filter"` field:
+
+```json
+{
+  "user": "analyst_uk",
+  "catalog": "delta",
+  "schema": "gold",
+  "table": "customer_analytics",
+  "privileges": ["SELECT"],
+  "filter": "region = 'UK'",
+  "columns": [ ... ]
+}
+```
+
+Trino injects this as a `WHERE` clause on every query — the analyst cannot
+bypass it, even with `SELECT *`. Run both users and compare:
+
+```bash
+# analyst_uk — only UK rows, phone/email masked, cccd NULL
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user analyst_uk --password AnalystUK_2026! \
+  --sql "SELECT customer_id, region, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
+
+# analyst_us — only US rows, same masking
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user analyst_us --password AnalystUS_2026! \
+  --sql "SELECT customer_id, region, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
+```
+
+Expected output for `analyst_uk`:
+
+```
+ customer_id | region |    phone     |       email        | cccd
+-------------+--------+--------------+--------------------+------
+ C0042       | UK     | 090****123   | jo***@gmail.com    | NULL
+ C0071       | UK     | 098****456   | na***@outlook.com  | NULL
+ ...
+```
+
+The `region` column always shows `UK` — rows from other regions are invisible,
+not just hidden. Point out: this is row-level security at the query engine
+layer, with no application code involved.
+
+## 7. Tail the audit trail
 
 ```bash
 tail -20 logs/audit/pii_access.log
@@ -134,7 +189,7 @@ Each line is a JSON record: job, table, columns touched, row count, `ds`,
 timestamp — answers "who read what PII, when, how much" without ever writing a
 real phone/email/cccd value into a log file.
 
-## 7. Least privilege at the DB layer
+## 8. Least privilege at the DB layer
 
 ```bash
 docker exec -it $(docker compose ps -q postgres-source) \
