@@ -20,6 +20,7 @@ pattern as `session_05_pyspark_lakehouse` / `session_06_performance_optimization
 ```bash
 cd session_07_security
 mkdir -p logs/audit
+chmod 777 logs/audit   # Spark container writes here; Docker Desktop on macOS needs world-writable
 docker compose up -d
 ```
 
@@ -35,7 +36,61 @@ docker exec s07-spark-master /opt/spark/bin/spark-submit /jobs/init_schema.py
 
 Airflow UI: http://localhost:8888 (airflow/airflow) · Vault UI: http://localhost:8200 (token `root-demo-token`) · Trino: http://localhost:8092 · MinIO console: http://localhost:9001 (minioadmin/minioadmin).
 
-## 2. Prove there are no hardcoded secrets
+## 2. How Trino SSL is enabled — and why it's mandatory
+
+This demo runs Trino over HTTPS only. Walk through the three files that wire it up together:
+
+**`docker-compose.yml` — entrypoint generates the keystore on first boot:**
+
+```bash
+keytool -genkeypair -alias trino -keyalg RSA -keysize 2048 -validity 3650 \
+  -dname 'CN=trino, OU=demo, O=dataops-from-scratch' \
+  -ext 'SAN=dns:trino,dns:localhost' \
+  -keystore /etc/trino/certs/keystore.p12 -storetype PKCS12 \
+  -storepass demo-keystore-password -keypass demo-keystore-password
+keytool -exportcert -rfc -alias trino \
+  -keystore /etc/trino/certs/keystore.p12 -storepass demo-keystore-password \
+  -file /etc/trino/certs/trino.pem
+```
+
+`trino.pem` is the self-signed CA cert exported for clients to verify the server. The `certs/` directory is bind-mounted into both the Trino container and any client container (`demo-cli`, `airflow-worker`) — so they all share the same cert file without copying.
+
+**`conf/trino/config.properties` — the three lines that enable HTTPS + auth:**
+
+```properties
+http-server.authentication.type=PASSWORD        # requires HTTPS — won't work over HTTP
+http-server.https.enabled=true
+http-server.https.port=8443
+http-server.https.keystore.path=/etc/trino/certs/keystore.p12
+http-server.https.keystore.key=demo-keystore-password
+internal-communication.shared-secret=demo-internal-shared-secret-2026
+```
+
+Port 8080 (mapped to host 8092) stays open **only** for the unauthenticated `/v1/info` healthcheck — SQL queries sent to 8080 are rejected.
+
+**`conf/trino/password-authenticator.properties` — file-based identity:**
+
+```properties
+password-authenticator.name=file
+file.password-file=/etc/trino/password.db   # bcrypt-hashed passwords
+file.refresh-period=5s                       # live reload — add a user, takes effect in 5s
+```
+
+**Why SSL is not optional here:** Trino enforces a protocol-level rule — `http-server.authentication.type=PASSWORD` refuses to serve SQL over HTTP. Without TLS, an attacker on the same network could intercept credentials and query results in plaintext, bypassing column masking entirely (the data is masked at the engine but travels unencrypted to the client). TLS closes that gap.
+
+**Verify SSL is working:**
+
+```bash
+# should return Trino version info over HTTPS
+curl -k https://localhost:8443/v1/info
+
+# should be blocked (SQL requires auth over HTTPS, not HTTP)
+curl http://localhost:8092/v1/statement -d "SELECT 1"
+```
+
+---
+
+## 3. Prove there are no hardcoded secrets (gitleaks)
 
 Use [gitleaks](https://github.com/gitleaks/gitleaks) — scans git history and working tree for leaked secrets (API keys, tokens, passwords matching known patterns):
 
@@ -56,7 +111,7 @@ Running against `demo/dags/` and `demo/jobs/` returns no findings — no credent
 
 > **Note:** gitleaks catches high-confidence patterns (API keys, tokens, private keys). Generic passwords like `"postgres"` require code review or a custom rule — no tool is a silver bullet.
 
-## 3. Look at what's actually in Vault
+## 4. Look at what's actually in Vault
 
 ```bash
 docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=root-demo-token s07-vault vault kv get secret/dataops/minio
@@ -70,14 +125,14 @@ Point out: the DAG (`dags/customer_pii_pipeline.py`) never references
 `VaultBackend` resolves `PostgresHook(postgres_conn_id="postgres_source_conn")`
 against this exact path at task-run time.
 
-## 4. Run the pipeline
+## 5. Run the pipeline
 
 In the Airflow UI, unpause and trigger `session_07_customer_pii_pipeline`. Watch
 `validate_source_connection -> ingest_bronze -> transform_silver -> transform_gold
 -> reconcile -> show_audit_summary` go green. `show_audit_summary`'s task log
 prints the tail of the audit trail (see step 6).
 
-## 5. Query as admin vs analyst — the masking payoff
+## 6. Query as admin vs analyst — the masking payoff
 
 Trino requires a password now (`file` password authenticator, see
 `conf/trino/password.db` / `conf/trino/password-authenticator.properties`).
@@ -132,7 +187,7 @@ docker compose exec demo-cli python /scripts/query_trino.py \
 # -> blocked: Trino ACL denies SELECT on bronze (rules.json) + MinIO trino-svc has no bronze bucket access (defense in depth)
 ```
 
-## 6. Row-level filtering — analyst_uk vs analyst_us
+## 7. Row-level filtering — analyst_uk vs analyst_us
 
 `analyst_uk` and `analyst_us` are scoped analysts: same masking as `analyst`,
 but each sees only their own region's rows. The enforcement lives in
@@ -179,7 +234,7 @@ The `region` column always shows `UK` — rows from other regions are invisible,
 not just hidden. Point out: this is row-level security at the query engine
 layer, with no application code involved.
 
-## 7. Tail the audit trail
+## 8. Tail the audit trail
 
 ```bash
 tail -20 logs/audit/pii_access.log
@@ -189,7 +244,7 @@ Each line is a JSON record: job, table, columns touched, row count, `ds`,
 timestamp — answers "who read what PII, when, how much" without ever writing a
 real phone/email/cccd value into a log file.
 
-## 8. Least privilege at the DB layer
+## 9. Least privilege at the DB layer
 
 ```bash
 docker exec -it $(docker compose ps -q postgres-source) \

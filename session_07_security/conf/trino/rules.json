@@ -31,13 +31,6 @@
     {
       "user": "analyst",
       "catalog": "delta",
-      "schema": "bronze",
-      "table": ".*",
-      "privileges": []
-    },
-    {
-      "user": "analyst",
-      "catalog": "delta",
       "schema": "silver",
       "table": "customers",
       "privileges": ["SELECT"],

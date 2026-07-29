@@ -30,12 +30,20 @@ x-airflow-common:
     # verify TLS properly instead of verify=False.
     TRINO_CA_CERT: /opt/trino-certs/trino.pem
     AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
+    # Point PySpark (installed in the Airflow image) to the same spark-defaults.conf
+    # used by the Spark cluster, so the driver picks up spark.jars automatically.
+    SPARK_CONF_DIR: /opt/spark/conf
   volumes:
     - ./demo/dags:/opt/airflow/dags
     - ./labs:/opt/airflow/dags/labs
     - ./logs:/opt/airflow/logs
     - ./demo/jobs:/opt/airflow/jobs
     - ./conf/trino/certs:/opt/trino-certs:ro
+    # Driver (airflow-worker) needs the Delta/S3A/Postgres JARs locally —
+    # spark.jars in spark-defaults.conf references /opt/jars and the driver
+    # must be able to read them to load DeltaSparkSessionExtension at startup.
+    - ../session_05_pyspark_lakehouse/jars:/opt/jars:ro
+    - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on

@@ -7,6 +7,7 @@ Stack: Airflow (Celery) + Spark + MinIO (Delta Lake) + Hive Metastore + Trino + 
 ```bash
 cd session_07_security
 mkdir -p logs/audit
+chmod 777 logs/audit   # Spark container writes here; Docker Desktop on macOS needs world-writable
 docker compose up -d
 ```
 
@@ -74,6 +75,7 @@ Giving analysts `SELECT` on a gold table sounds safe — until you realize the t
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `WARNING: Could not write audit log file: [Errno 13] Permission denied: '/var/log/pii_audit'` | Docker Desktop on macOS does not map container root to host user — `logs/audit` (755) blocks writes | `chmod 777 logs/audit` on the host, then retry the Airflow task |
 | DBeaver/JDBC → Trino 8443: `toDerInputStream rejects tag type 45` or `SSL peer shut down` | JKS truststore created with wrong store type (`keytool` defaults to PKCS12 on Java 9+) | Re-import with `-storetype JKS`: `keytool -importcert -alias trino -file conf/trino/certs/trino.pem -keystore trino-truststore.jks -storetype JKS -storepass changeit -noprompt`. Set `SSLTrustStoreType=JKS` in the JDBC URL. See `demo/README.md` & DBeaver setup. |
 | `Access Denied: Cannot access catalog system` | `rules.json` missing a catalog-level entry — table-level rules do not imply catalog access | Add `{ "user": "analyst_uk\|analyst_us", "catalog": "system", "allow": "read-only" }` before the table rules, then `docker compose restart trino` |
 | Spark job: `ClassNotFoundException: delta.DeltaSparkSessionExtension` | Session 05 JAR volume not mounted, or `spark-defaults.conf` not loaded | Check `ls ../session_05_pyspark_lakehouse/jars` and confirm both `spark-master` and `spark-worker` mount it; verify `spark-defaults.conf` is bind-mounted to `/opt/spark/conf/spark-defaults.conf` |
