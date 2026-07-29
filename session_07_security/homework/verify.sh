@@ -41,7 +41,7 @@ else
 fi
 
 # 1c. UK + US counts add up to total
-COUNT_ADMIN=$(trino_count admin "" "SELECT COUNT(*) FROM delta.gold.customer_analytics")
+COUNT_ADMIN=$(trino_count admin "AdminDemo_2026!" "SELECT COUNT(*) FROM delta.gold.customer_analytics")
 if [ $((COUNT + COUNT_US)) -eq "$COUNT_ADMIN" ]; then
   ok "UK ($COUNT) + US ($COUNT_US) = admin total ($COUNT_ADMIN)"
 else
@@ -58,7 +58,8 @@ fi
 
 # 1e. existing analyst column masking still works
 if docker compose exec -T demo-cli python /scripts/query_trino.py \
-    --user analyst --sql "SELECT cccd FROM delta.gold.customer_analytics LIMIT 1" \
+    --user analyst --password 'AnalystDemo_2026!' \
+    --sql "SELECT cccd FROM delta.gold.customer_analytics LIMIT 1" \
     2>&1 | grep -q "^None"; then
   ok "analyst column masking intact (cccd = None)"
 else

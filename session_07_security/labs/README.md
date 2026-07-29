@@ -108,6 +108,8 @@ docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=root-demo-token s
 
 **Files:** `jobs/build_marketing_customers.py`, `trino_rules_patch.json`
 
+> **Note on `trino_rules_patch.json`:** The patch file intentionally grants `marketing` broad access (`"schema": ".*", "table": ".*"`) — this is the broken starting point for F3. Your task is to replace those table entries with a rule that restricts `marketing` to exactly `gold.marketing_customers`. Do **not** add the patch file as-is; read it, understand what's wrong, then write the correct entry.
+
 The Marketing team needs data to analyze customer cohorts by segment, region, registration date, and financial tier, along with the ability to verify contact reachability for SMS/email campaigns.
 
 The DPO (Data Protection Officer) reviewed both files and **rejected them with 3 findings**, noting: *"Violates data minimization and access control principles. Revise."*

@@ -32,6 +32,8 @@ Your task: add row filters to `conf/trino/rules.json` so that:
 - `admin` is unaffected — sees all rows across both regions
 - The existing `analyst` column-masking rules are untouched
 
+You can research information from [this site](https://trino.io/docs/current/security/file-system-access-control.html#filter-and-mask-environment) of Trino document.
+
 After editing `rules.json`, apply it:
 
 ```bash
@@ -53,7 +55,7 @@ docker compose exec demo-cli python /scripts/query_trino.py \
   --sql "SELECT COUNT(*) FROM delta.gold.customer_analytics"
 
 docker compose exec demo-cli python /scripts/query_trino.py \
-  --user admin \
+  --user admin --password 'AdminDemo_2026!' \
   --sql "SELECT COUNT(*) FROM delta.gold.customer_analytics"
 ```
 
@@ -73,7 +75,7 @@ docker compose exec demo-cli python /scripts/query_trino.py \
 
 ---
 
-## Part 2 — Credential Rotation (GLBA Safeguards Rule §314.4(c))
+## Part 2 — Credential Rotation (GLBA Safeguards Rule 314.4(c))
 
 The `etl_reader` Postgres user's password is currently `EtlReader_DemoOnly_2026!` (visible in Vault at `secret/dataops/postgres_source`). You must rotate it to a new value **without restarting any container and without changing any line of code**.
 

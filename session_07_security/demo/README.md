@@ -95,11 +95,11 @@ Pass `--password` explicitly. Demo bootstrap credentials (dev/test only):
 
 ```bash
 docker compose exec demo-cli python /scripts/query_trino.py \
-  --user admin --password AdminDemo_2026! \
+  --user admin --password 'AdminDemo_2026!' \
   --sql "SELECT customer_id, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
 
 docker compose exec demo-cli python /scripts/query_trino.py \
-  --user analyst --password AnalystDemo_2026! \
+  --user analyst --password 'AnalystDemo_2026!' \
   --sql "SELECT customer_id, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
 ```
 
@@ -127,7 +127,7 @@ Then show defense in depth on the raw layer:
 
 ```bash
 docker compose exec demo-cli python /scripts/query_trino.py \
-  --user analyst --password AnalystDemo_2026! \
+  --user analyst --password 'AnalystDemo_2026!' \
   --sql "SELECT * FROM delta.bronze.customers LIMIT 5"
 # -> blocked: Trino ACL denies SELECT on bronze (rules.json) + MinIO trino-svc has no bronze bucket access (defense in depth)
 ```
@@ -156,12 +156,12 @@ bypass it, even with `SELECT *`. Run both users and compare:
 ```bash
 # analyst_uk — only UK rows, phone/email masked, cccd NULL
 docker compose exec demo-cli python /scripts/query_trino.py \
-  --user analyst_uk --password AnalystUK_2026! \
+  --user analyst_uk --password 'AnalystUK_2026!' \
   --sql "SELECT customer_id, region, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
 
 # analyst_us — only US rows, same masking
 docker compose exec demo-cli python /scripts/query_trino.py \
-  --user analyst_us --password AnalystUS_2026! \
+  --user analyst_us --password 'AnalystUS_2026!' \
   --sql "SELECT customer_id, region, phone, email, cccd FROM delta.gold.customer_analytics LIMIT 5"
 ```
 

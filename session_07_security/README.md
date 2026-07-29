@@ -70,6 +70,16 @@ When a data breach occurs, the first question is "who accessed what, when, and h
 **5. Analyst access without column masking or row filtering**
 Giving analysts `SELECT` on a gold table sounds safe — until you realize the table still contains `cccd`, `full_name`, and raw `account_balance`. Role-based column masking (Trino `rules.json`) and row-level filters (`"filter": "region = 'UK'"`) enforce the access policy at the query engine, independent of the application. Defense in depth: even if an analyst finds a direct S3 path, the MinIO ACL blocks them.
 
+## 🚑 Common errors & fixes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| DBeaver/JDBC → Trino 8443: `toDerInputStream rejects tag type 45` or `SSL peer shut down` | JKS truststore created with wrong store type (`keytool` defaults to PKCS12 on Java 9+) | Re-import with `-storetype JKS`: `keytool -importcert -alias trino -file conf/trino/certs/trino.pem -keystore trino-truststore.jks -storetype JKS -storepass changeit -noprompt`. Set `SSLTrustStoreType=JKS` in the JDBC URL. See `demo/README.md` & DBeaver setup. |
+| `Access Denied: Cannot access catalog system` | `rules.json` missing a catalog-level entry — table-level rules do not imply catalog access | Add `{ "user": "analyst_uk\|analyst_us", "catalog": "system", "allow": "read-only" }` before the table rules, then `docker compose restart trino` |
+| Spark job: `ClassNotFoundException: delta.DeltaSparkSessionExtension` | Session 05 JAR volume not mounted, or `spark-defaults.conf` not loaded | Check `ls ../session_05_pyspark_lakehouse/jars` and confirm both `spark-master` and `spark-worker` mount it; verify `spark-defaults.conf` is bind-mounted to `/opt/spark/conf/spark-defaults.conf` |
+| Airflow task: `hvac.exceptions.InvalidPath` or `KeyError` on Vault read | `vault-init` exited before seeding finished, or secret path mismatch | Run `docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=root-demo-token s07-vault vault kv list secret/dataops` and compare against the path used in the job |
+| SparkSubmitOperator: `Connection refused` to spark-master | `AIRFLOW_CONN_SPARK_DEFAULT` has wrong scheme or hostname | Value must be `{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}`. Verify: `docker compose exec airflow-worker env \| grep SPARK` |
+
 ## Shutdown
 
 ```bash

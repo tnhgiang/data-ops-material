@@ -1,4 +1,3 @@
-from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     DateType,
     DecimalType,
@@ -8,24 +7,12 @@ from pyspark.sql.types import (
     StructType,
     TimestampType,
 )
-from security_utils import get_logger, get_vault_secret
+from security_utils import get_logger, get_spark_session, get_vault_secret
 
 logger = get_logger("init_schema")
 minio_secret = get_vault_secret("dataops/minio")
 
-spark = (
-    SparkSession.builder.appName("security-demo-init")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .config("spark.hadoop.hive.metastore.uris", "thrift://hive-metastore:9083")
-    .config("spark.hadoop.fs.s3a.endpoint", minio_secret["endpoint"])
-    .config("spark.hadoop.fs.s3a.access.key", minio_secret["access_key"])
-    .config("spark.hadoop.fs.s3a.secret.key", minio_secret["secret_key"])
-    .config("spark.hadoop.fs.s3a.path.style.access", "true")
-    .config("spark.sql.warehouse.dir", "s3a://silver/")
-    .enableHiveSupport()
-    .getOrCreate()
-)
+spark = get_spark_session("security-demo-init", minio_secret)
 spark.sparkContext.setLogLevel("WARN")
 
 spark.sql("CREATE DATABASE IF NOT EXISTS bronze LOCATION 's3a://bronze/'")
