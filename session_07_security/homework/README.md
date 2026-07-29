@@ -86,26 +86,26 @@ The Spark jobs fetch credentials from Vault at runtime on every execution — th
 Step 1 — change the password in Postgres:
 
 ```bash
-docker exec -i session_07_security-postgres-source-1 \
+docker exec -i $(docker compose ps -q postgres-source) \
   psql -U postgres -d dataops_source -c \
   "ALTER USER etl_reader WITH PASSWORD '<your-new-password>';"
 ```
 
-Step 2 — update the secret in Vault:
+Step 2 — update the secret in Vault (use single quotes to avoid shell expansion):
 
 ```bash
 docker exec \
   -e VAULT_ADDR=http://127.0.0.1:8200 \
   -e VAULT_TOKEN=root-demo-token \
   s07-vault \
-  vault kv patch secret/dataops/postgres_source password="<your-new-password>"
+  vault kv patch secret/dataops/postgres_source password='<your-new-password>'
 ```
 
 Step 3 — trigger the pipeline immediately after (no restart):
 
 ```bash
-JARS=/opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar,/opt/jars/postgresql-42.6.0.jar
-docker exec s07-spark-master /opt/spark/bin/spark-submit --jars $JARS /jobs/ingest_bronze.py --ds 2026-07-23
+docker exec s07-spark-master /opt/spark/bin/spark-submit \
+  /jobs/ingest_bronze.py --ds $(date +%Y-%m-%d)
 ```
 
 ### Acceptance criteria
@@ -113,7 +113,7 @@ docker exec s07-spark-master /opt/spark/bin/spark-submit --jars $JARS /jobs/inge
 1. Prove the old password no longer works:
 
 ```bash
-docker exec -i session_07_security-postgres-source-1 \
+docker exec -i $(docker compose ps -q postgres-source) \
   psql "postgresql://etl_reader:EtlReader_DemoOnly_2026!@localhost/dataops_source" \
   -c "SELECT 1" 2>&1
 # must return: FATAL: password authentication failed

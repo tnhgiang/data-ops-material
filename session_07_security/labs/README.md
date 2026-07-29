@@ -45,6 +45,15 @@ The BI team needs a daily CSV export of customer counts by segment and region. A
 
 This week the security team scanned the repository and **flagged this DAG with 3 findings**. Your task: identify all three, explain the risk of each, and fix the DAG so it still runs successfully.
 
+**Setup (run once before triggering the DAG):**
+
+```bash
+# Create the lab_reader account in postgres-source
+docker exec -i $(docker compose ps -q postgres-source) \
+  psql -U postgres -d dataops_source -c \
+  "CREATE ROLE lab_reader WITH LOGIN PASSWORD 'LabReader_2026!'; GRANT USAGE ON SCHEMA raw TO lab_reader; GRANT SELECT ON raw.customers TO lab_reader;"
+```
+
 **Available resources:**
 - Vault is running at `http://vault:8200` — inspect: `docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=root-demo-token s07-vault vault kv list secret/dataops`
 - Airflow is configured with the Vault secrets backend (see `docker-compose.yml`, `AIRFLOW__SECRETS__*`)
@@ -56,6 +65,29 @@ This week the security team scanned the repository and **flagged this DAG with 3
 2. DAG runs green and the CSV still appears in MinIO.
 3. The Postgres connection does not use an account with more privileges than this job needs.
 4. Explain: if this file had already been committed to Git, is fixing the code enough? What else needs to happen?
+
+**Run & verify:**
+```bash
+# 1. Trigger DAG
+curl -s -X POST http://localhost:8888/api/v1/dags/session_07_lab1_customer_export/dagRuns \
+  -H 'Content-Type: application/json' -u airflow:airflow -d '{"conf":{}}' | python3 -m json.tool
+
+# 2a. AC1 — no hardcoded credential values
+grep -niE "password|secret|access.?key" labs/dags/customer_export_dag.py
+
+# 2b. AC2 — CSV landed in MinIO (run after DAG is green)
+docker compose exec demo-cli python3 -c "
+from minio import Minio
+c = Minio('minio:9000', access_key='minioadmin', secret_key='minioadmin', secure=False)
+for o in c.list_objects('gold', prefix='exports/'): print(o.object_name, o.size, 'bytes')
+"
+
+# 2c. AC3 — lab_reader is denied INSERT
+docker exec -i $(docker compose ps -q postgres-source) \
+  psql -U lab_reader -d dataops_source \
+  -c "INSERT INTO raw.customers (customer_id,full_name,phone,email,cccd,date_of_birth,address,segment,region,account_balance,credit_score) VALUES ('x','x','x','x','x','2000-01-01','x','x','x',0,0)"
+# → expected: ERROR:  permission denied for table customers
+```
 
 **How to fix:**
 
@@ -99,7 +131,7 @@ Then update the Vault secret — no code change needed:
 ```bash
 docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=root-demo-token s07-vault \
   vault kv patch secret/dataops/postgres_source_lab \
-  username="lab_reader" password="LabReader_2026!"
+  username='lab_reader' password='LabReader_2026!'
 ```
 
 ---
@@ -125,8 +157,11 @@ The DPO (Data Protection Officer) reviewed both files and **rejected them with 3
 # add the marketing user to Trino (provided — not a finding):
 echo 'marketing:$2y$10$G.Xe8rLs5ALq7IBf5dgsZurmOnIozrb5RTbT5rxKjcD1p0J46mDG6' >> conf/trino/password.db
 # password: MarketingDemo_2026!
+```
 
-# merge your fixed rule into conf/trino/rules.json, then:
+When merging into `conf/trino/rules.json`, place the `marketing` catalog entries **before** the catch-all `{ "catalog": ".*", "allow": "none" }` line — Trino evaluates rules top-to-bottom and the catch-all must always be last. After merging:
+
+```bash
 docker compose restart trino
 ```
 
@@ -135,6 +170,43 @@ docker compose restart trino
 2. User `marketing` can query `gold.marketing_customers` with phone/email partially masked; **all other tables** → Access Denied.
 3. Users `admin` and `analyst` are unaffected.
 4. Demonstrate with actual query output for all three users.
+
+**Run & verify:**
+```bash
+# 1. Build marketing_customers table
+docker exec s07-spark-master /opt/spark/bin/spark-submit \
+  /labs/jobs/build_marketing_customers.py --ds $(date +%Y-%m-%d)
+
+# 2. AC1 — verify schema: must not contain full_name/cccd/date_of_birth/address/account_balance/credit_score
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user admin --password 'AdminDemo_2026!' \
+  --sql "DESCRIBE delta.gold.marketing_customers"
+
+# 3. AC2 — marketing sees data with phone/email masked
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user marketing --password 'MarketingDemo_2026!' \
+  --sql "SELECT customer_id, phone, email, balance_tier FROM delta.gold.marketing_customers LIMIT 3"
+
+# 4. AC2 — marketing is denied on all other tables
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user marketing --password 'MarketingDemo_2026!' \
+  --sql "SELECT * FROM delta.gold.customer_analytics LIMIT 1"
+# → expected: Access Denied
+
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user marketing --password 'MarketingDemo_2026!' \
+  --sql "SELECT * FROM delta.silver.customers LIMIT 1"
+# → expected: Access Denied
+
+# 5. AC3 — admin and analyst are unaffected
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user admin --password 'AdminDemo_2026!' \
+  --sql "SELECT customer_id, phone FROM delta.gold.customer_analytics LIMIT 2"
+
+docker compose exec demo-cli python /scripts/query_trino.py \
+  --user analyst --password 'AnalystDemo_2026!' \
+  --sql "SELECT customer_id, phone FROM delta.gold.customer_analytics LIMIT 2"
+```
 
 **How to fix:**
 
@@ -189,3 +261,70 @@ An internal audit **flagged this pair of files with 3 findings**. Each finding i
 1. After running the fixed job, **no PII values appear in logs or stdout**. Prove: `docker logs s07-spark-master 2>&1 | grep -i "phone\|cccd\|full_name"` returns nothing.
 2. The reporting service account has only `SELECT` on `raw.customers`. Prove: `INSERT` with that account must be denied.
 3. The job still produces the correct row count in `bronze.customers_sync`.
+
+**How to fix:**
+
+*F1 — remove `setLogLevel("DEBUG")` (line 20 of `sync_customers.py`):*
+
+`spark-submit` defaults to `WARN` — remove this line entirely. At `DEBUG`, Spark dumps raw partition data including PII to stdout and executor logs:
+```python
+spark.sparkContext.setLogLevel("DEBUG")  # remove this line
+```
+
+*F2 — remove `df.show()` (line 35 of `sync_customers.py`):*
+
+`df.show()` prints all rows including raw PII to stdout. Remove the line entirely:
+```python
+df.show(20)  # remove this line
+```
+
+*F3 — remove PII from the warning log (lines 40–44 of `sync_customers.py`):*
+
+Logging individual rows exposes raw PII. Log the count only:
+```python
+# before
+for row in flagged.collect():
+    logger.warning(
+        f"Low credit score record: {row['full_name']} ({row['cccd']}), ..."
+    )
+
+# after
+logger.warning("Low credit score records: %d", flagged.count())
+```
+
+*`init_reporting.sql` — replace SUPERUSER account with least-privilege role:*
+
+`SUPERUSER` bypasses all permission checks server-wide; `ALL PRIVILEGES` grants INSERT/UPDATE/DELETE far beyond what a read-only reporting account needs. Replace with:
+```sql
+CREATE USER lab_reporter WITH LOGIN PASSWORD 'LabReporter_2026!';
+GRANT CONNECT ON DATABASE dataops_source TO lab_reporter;
+GRANT USAGE ON SCHEMA raw TO lab_reporter;
+GRANT SELECT ON raw.customers TO lab_reporter;
+```
+
+---
+
+**Run & verify:**
+```bash
+# 0. Restart spark-master to clear old logs before verifying AC1
+docker compose restart spark-master spark-worker
+
+# 1. Setup: create the service account (run after fixing init_reporting.sql)
+docker exec -i $(docker compose ps -q postgres-source) \
+  psql -U postgres -d dataops_source < labs/sql/init_reporting.sql
+
+# 2. Run the fixed sync job
+# → expected output includes: synced 200 customers for <date>
+docker exec s07-spark-master /opt/spark/bin/spark-submit \
+  /labs/jobs/sync_customers.py --ds $(date +%Y-%m-%d)
+
+# 3. AC1 — no PII in logs (step 0 ensures only current run's logs are present)
+docker logs s07-spark-master 2>&1 | grep -i "phone\|cccd\|full_name"
+# → expected: no output
+
+# 4. AC2 — reporting account is denied INSERT
+docker exec -i $(docker compose ps -q postgres-source) \
+  psql -U lab_reporter -d dataops_source \
+  -c "INSERT INTO raw.customers (customer_id,full_name,phone,email,cccd,date_of_birth,address,segment,region,account_balance,credit_score) VALUES ('x','x','x','x','x','2000-01-01','x','x','x',0,0)"
+# → expected: ERROR:  permission denied for table customers
+```
