@@ -1,0 +1,401 @@
+{
+  "evaluation_parameters": {},
+  "meta": {
+    "active_batch_definition": {
+      "batch_identifiers": {},
+      "data_asset_name": "orders_bronze",
+      "data_connector_name": "fluent",
+      "datasource_name": "runtime"
+    },
+    "batch_markers": {
+      "ge_load_time": "20260730T055308.124204Z",
+      "pandas_data_fingerprint": "0c5732a071b9873dd3294bb7ebbfd76b"
+    },
+    "batch_spec": {
+      "batch_data": "PandasDataFrame"
+    },
+    "checkpoint_id": null,
+    "checkpoint_name": "orders_bronze_checkpoint",
+    "expectation_suite_name": "orders_bronze_suite",
+    "great_expectations_version": "0.18.19",
+    "run_id": {
+      "run_name": null,
+      "run_time": "2026-07-30T12:53:08.123277+07:00"
+    },
+    "validation_id": null,
+    "validation_time": "20260730T055308.128144Z"
+  },
+  "results": [
+    {
+      "exception_info": {
+        "exception_message": null,
+        "exception_traceback": null,
+        "raised_exception": false
+      },
+      "expectation_config": {
+        "expectation_type": "expect_column_values_to_not_be_null",
+        "kwargs": {
+          "batch_id": "runtime-orders_bronze",
+          "column": "order_id"
+        },
+        "meta": {}
+      },
+      "meta": {},
+      "result": {
+        "element_count": 10000,
+        "partial_unexpected_counts": [
+          {
+            "count": 20,
+            "value": null
+          }
+        ],
+        "partial_unexpected_index_list": [
+          3,
+          29,
+          37,
+          39,
+          91,
+          125,
+          161,
+          173,
+          206,
+          212,
+          251,
+          313,
+          369,
+          372,
+          401,
+          418,
+          423,
+          440,
+          502,
+          625
+        ],
+        "partial_unexpected_list": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "unexpected_count": 200,
+        "unexpected_percent": 2.0
+      },
+      "success": false
+    },
+    {
+      "exception_info": {
+        "exception_message": null,
+        "exception_traceback": null,
+        "raised_exception": false
+      },
+      "expectation_config": {
+        "expectation_type": "expect_column_values_to_be_unique",
+        "kwargs": {
+          "batch_id": "runtime-orders_bronze",
+          "column": "order_id"
+        },
+        "meta": {}
+      },
+      "meta": {},
+      "result": {
+        "element_count": 10000,
+        "missing_count": 200,
+        "missing_percent": 2.0,
+        "partial_unexpected_counts": [
+          {
+            "count": 11,
+            "value": "ORD-000001"
+          }
+        ],
+        "partial_unexpected_index_list": [
+          1,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105,
+          106,
+          107,
+          108,
+          109
+        ],
+        "partial_unexpected_list": [
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001",
+          "ORD-000001"
+        ],
+        "unexpected_count": 11,
+        "unexpected_percent": 0.11224489795918367,
+        "unexpected_percent_nonmissing": 0.11224489795918367,
+        "unexpected_percent_total": 0.11
+      },
+      "success": false
+    },
+    {
+      "exception_info": {
+        "exception_message": null,
+        "exception_traceback": null,
+        "raised_exception": false
+      },
+      "expectation_config": {
+        "expectation_type": "expect_column_values_to_be_between",
+        "kwargs": {
+          "batch_id": "runtime-orders_bronze",
+          "column": "amount",
+          "max_value": 1000000,
+          "min_value": 0
+        },
+        "meta": {}
+      },
+      "meta": {},
+      "result": {
+        "element_count": 10000,
+        "missing_count": 0,
+        "missing_percent": 0.0,
+        "partial_unexpected_counts": [
+          {
+            "count": 1,
+            "value": -44427.38
+          },
+          {
+            "count": 1,
+            "value": -39248.28
+          },
+          {
+            "count": 1,
+            "value": -37691.46
+          },
+          {
+            "count": 1,
+            "value": -35172.67
+          },
+          {
+            "count": 1,
+            "value": -33681.38
+          },
+          {
+            "count": 1,
+            "value": -27629.28
+          },
+          {
+            "count": 1,
+            "value": -25896.49
+          },
+          {
+            "count": 1,
+            "value": -23137.14
+          },
+          {
+            "count": 1,
+            "value": -19656.49
+          },
+          {
+            "count": 1,
+            "value": -19078.91
+          },
+          {
+            "count": 1,
+            "value": -15367.17
+          },
+          {
+            "count": 1,
+            "value": -11230.21
+          },
+          {
+            "count": 1,
+            "value": -11002.92
+          },
+          {
+            "count": 1,
+            "value": -10117.82
+          },
+          {
+            "count": 1,
+            "value": -9578.03
+          },
+          {
+            "count": 1,
+            "value": -8569.91
+          },
+          {
+            "count": 1,
+            "value": -5498.41
+          },
+          {
+            "count": 1,
+            "value": -4549.8
+          },
+          {
+            "count": 1,
+            "value": -4408.85
+          },
+          {
+            "count": 1,
+            "value": -4144.29
+          }
+        ],
+        "partial_unexpected_index_list": [
+          100,
+          139,
+          149,
+          191,
+          281,
+          304,
+          368,
+          525,
+          534,
+          544,
+          548,
+          566,
+          574,
+          589,
+          635,
+          637,
+          739,
+          852,
+          873,
+          894
+        ],
+        "partial_unexpected_list": [
+          -27629.28,
+          -19078.91,
+          -10117.82,
+          -39248.28,
+          -25896.49,
+          -23137.14,
+          -9578.03,
+          -37691.46,
+          -44427.38,
+          -5498.41,
+          -4408.85,
+          -15367.17,
+          -35172.67,
+          -19656.49,
+          -33681.38,
+          -11002.92,
+          -8569.91,
+          -11230.21,
+          -4144.29,
+          -4549.8
+        ],
+        "unexpected_count": 150,
+        "unexpected_percent": 1.5,
+        "unexpected_percent_nonmissing": 1.5,
+        "unexpected_percent_total": 1.5
+      },
+      "success": false
+    },
+    {
+      "exception_info": {
+        "exception_message": null,
+        "exception_traceback": null,
+        "raised_exception": false
+      },
+      "expectation_config": {
+        "expectation_type": "expect_column_values_to_not_be_null",
+        "kwargs": {
+          "batch_id": "runtime-orders_bronze",
+          "column": "order_date"
+        },
+        "meta": {}
+      },
+      "meta": {},
+      "result": {
+        "element_count": 10000,
+        "partial_unexpected_counts": [],
+        "partial_unexpected_index_list": [],
+        "partial_unexpected_list": [],
+        "unexpected_count": 0,
+        "unexpected_percent": 0.0
+      },
+      "success": true
+    },
+    {
+      "exception_info": {
+        "exception_message": null,
+        "exception_traceback": null,
+        "raised_exception": false
+      },
+      "expectation_config": {
+        "expectation_type": "expect_column_values_to_be_in_set",
+        "kwargs": {
+          "batch_id": "runtime-orders_bronze",
+          "column": "status",
+          "value_set": [
+            "pending",
+            "paid",
+            "cancelled",
+            "refunded"
+          ]
+        },
+        "meta": {}
+      },
+      "meta": {},
+      "result": {
+        "element_count": 10000,
+        "missing_count": 0,
+        "missing_percent": 0.0,
+        "partial_unexpected_counts": [],
+        "partial_unexpected_index_list": [],
+        "partial_unexpected_list": [],
+        "unexpected_count": 0,
+        "unexpected_percent": 0.0,
+        "unexpected_percent_nonmissing": 0.0,
+        "unexpected_percent_total": 0.0
+      },
+      "success": true
+    },
+    {
+      "exception_info": {
+        "exception_message": null,
+        "exception_traceback": null,
+        "raised_exception": false
+      },
+      "expectation_config": {
+        "expectation_type": "expect_table_row_count_to_be_between",
+        "kwargs": {
+          "batch_id": "runtime-orders_bronze",
+          "min_value": 1
+        },
+        "meta": {}
+      },
+      "meta": {},
+      "result": {
+        "observed_value": 10000
+      },
+      "success": true
+    }
+  ],
+  "statistics": {
+    "evaluated_expectations": 6,
+    "success_percent": 50.0,
+    "successful_expectations": 3,
+    "unsuccessful_expectations": 3
+  },
+  "success": false
+}
