@@ -14,6 +14,6 @@ WHERE
     order_date = DATE '{{ ds }}'
     AND customer_id IS NOT NULL
     AND amount IS NOT NULL
-    AND amount >= 0;
+    AND amount > 0;
 
 COMMIT;

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from airflow.models.dag import DAG
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator, SQLExecuteQueryOperator
@@ -23,7 +23,6 @@ with DAG(
     silver_transform = SQLExecuteQueryOperator(
         task_id="silver_transform",
         sql="bronze2silver__orders.sql",
-        sla=timedelta(hours=1),
         **LOAD_OPTS,
     )
     load_gold = SQLExecuteQueryOperator(

@@ -41,6 +41,6 @@ pytest demo/tests/ --cov=demo/dags --cov=demo/jobs --cov-report=term-missing
 |---|---|---|
 | `ModuleNotFoundError: dataops_common` | plugins not on PYTHONPATH | `export PYTHONPATH=/opt/airflow/plugins:$PYTHONPATH` |
 | `bandit` B105 false positives | test files scanned | `exclude_dirs = ["demo/tests", "labs/tests"]` in pyproject.toml |
-| `DagBag` import error | Airflow not installed | add `apache-airflow` to requirements-dev.txt |
+| `DagBag` import error | Airflow not installed locally | DAG tests are skipped locally — they run in CI where Airflow is available |
 | CD job not triggering | `workflow_run` requires CI workflow name to match exactly | check `workflows: ["DataOps CI"]` in cd.yml matches the `name:` in ci.yml |
 | CD job runs even when CI failed | missing `if` condition on deploy job | add `if: ${{ github.event.workflow_run.conclusion == 'success' }}` |

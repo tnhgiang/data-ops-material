@@ -12,5 +12,5 @@ SELECT
         FROM gold.fact_sales
         WHERE
             order_date = DATE '{{ ds }}'
-            AND (amount < 0 OR customer_id IS NULL)
+            AND (amount <= 0 OR customer_id IS NULL)
     ) = 0 AS rules_ok;

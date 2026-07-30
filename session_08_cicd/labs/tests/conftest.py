@@ -6,8 +6,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "jobs"))
 
-BROKEN_DAGS_PATH = os.path.join(os.path.dirname(__file__), "..", "jobs")
-SQL_PATH = os.path.join(BROKEN_DAGS_PATH, "bronze2silver__orders.sql")
+LAB_JOBS_PATH = os.path.join(os.path.dirname(__file__), "..", "jobs")
+SQL_PATH = os.path.join(LAB_JOBS_PATH, "bronze2silver__orders.sql")
 
 
 @pytest.fixture(scope="session")
@@ -15,7 +15,7 @@ def dagbag():
     pytest.importorskip("airflow", reason="airflow not installed — DAG tests run in CI only")
     from airflow.models import DagBag
 
-    return DagBag(dag_folder=BROKEN_DAGS_PATH, include_examples=False)
+    return DagBag(dag_folder=LAB_JOBS_PATH, include_examples=False)
 
 
 @pytest.fixture

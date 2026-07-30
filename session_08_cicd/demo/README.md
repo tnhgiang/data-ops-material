@@ -38,26 +38,34 @@ Show the three layers going green. Point out the coverage report in the `Unit te
 
 Run `pytest -v` in the terminal after each group. Students must see the test output, not just the code.
 
-**Group 1 — DAG tests** (`tests/test_dags/test_order_pipeline.py`)
+> **Note:** PySpark requires Java 8 or 11. Check your version with `java -version`. If you have Java 17+, set `JAVA_HOME` before running Spark tests:
+> ```bash
+> # Java 8
+> JAVA_HOME=$(/usr/libexec/java_home -v 1.8) pytest demo/tests/test_spark/ -v
+> # Java 11
+> JAVA_HOME=$(/usr/libexec/java_home -v 11) pytest demo/tests/test_spark/ -v
+> ```
+
+**Group 1 — DAG tests** (`demo/tests/test_dags/test_order_pipeline.py`)
 
 ```bash
-pytest tests/test_dags/ -v
+pytest demo/tests/test_dags/ -v
 ```
 
 Point out `test_no_catchup`: this would have silently backfilled months of history on the first deploy — CI catches it before merge.
 
-**Group 2 — SQL tests** (`tests/test_sql/test_silver_transform.py`)
+**Group 2 — SQL tests** (`demo/tests/test_sql/test_silver_transform.py`)
 
 ```bash
-pytest tests/test_sql/ -v
+pytest demo/tests/test_sql/ -v
 ```
 
 Point out `test_silver_filters_null_customer` and `test_silver_rejects_negative_amount`: run the bronze SQL first so students see the NULL and negative rows in the source, then show silver blocks them.
 
-**Group 3 — PySpark tests** (`tests/test_spark/test_spark_transform.py`)
+**Group 3 — PySpark tests** (`demo/tests/test_spark/test_spark_transform.py`)
 
 ```bash
-pytest tests/test_spark/ -v
+pytest demo/tests/test_spark/ -v
 ```
 
 Point out `test_processed_at_is_deterministic`: run transform twice with a 1-second gap, show both `processed_at` values are identical — the job is safe to retry at 3 AM.
@@ -65,7 +73,7 @@ Point out `test_processed_at_is_deterministic`: run transform twice with a 1-sec
 **Coverage report**
 
 ```bash
-pytest tests/ --cov=dags --cov=jobs --cov-report=term-missing
+pytest demo/tests/ --cov=demo/dags --cov=demo/jobs --cov-report=term-missing
 ```
 
 Walk through the `TOTAL` line. Point to at least one uncovered branch and ask "what test would cover this?"
@@ -110,6 +118,6 @@ The runner connects to GitHub over outbound HTTPS only — no ports need to be o
 |---|---|---|
 | `bandit` reports B105 on test fixtures | test files scanned | `exclude_dirs = ["demo/tests", "labs/tests"]` in pyproject.toml |
 | `ruff` fails on `# noqa` comment from session 04 | imported file outside scope | add path to `extend-exclude` in ruff.toml |
-| `DagBag` import error in CI | Airflow not installed | add `apache-airflow` to requirements-dev.txt |
+| `DagBag` import error in CI | Airflow not available in CI environment | ensure the CI workflow installs `apache-airflow` in its job steps |
 | CD job does not trigger after merge | `workflows:` name in cd.yml doesn't match ci.yml `name:` exactly | both must be `DataOps CI` |
 | Airflow API returns 404 on DAG verify step | DAG not mounted from pulled path | confirm `REPO_PATH` variable points to the repo folder Airflow mounts |
