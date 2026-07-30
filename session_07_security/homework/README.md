@@ -138,6 +138,18 @@ docker exec \
 
 ---
 
+## Self-check
+
+Run the automated verifier from `session_07_security/`:
+
+```bash
+bash homework/verify.sh
+```
+
+All checks must pass before submission.
+
+---
+
 ## Submission checklist
 
 - [ ] Part 1: screenshot or terminal output showing `analyst_uk` → 100, `analyst_us` → 100, `admin` → 200

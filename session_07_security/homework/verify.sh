@@ -5,7 +5,6 @@ set -euo pipefail
 
 PASS=0
 FAIL=0
-JARS=/opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar,/opt/jars/postgresql-42.6.0.jar
 
 ok()   { echo "[PASS] $*"; PASS=$((PASS+1)); }
 fail() { echo "[FAIL] $*"; FAIL=$((FAIL+1)); }
@@ -92,7 +91,7 @@ fi
 
 # 2c. ingest_bronze succeeds with new credential (no restart, no code change)
 if docker exec s07-spark-master /opt/spark/bin/spark-submit \
-    --jars "$JARS" /jobs/ingest_bronze.py --ds 2026-07-23 \
+    /jobs/ingest_bronze.py --ds "$(date +%Y-%m-%d)" \
     >/dev/null 2>&1; then
   ok "ingest_bronze succeeded after rotation (zero-downtime confirmed)"
 else
