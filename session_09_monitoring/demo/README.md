@@ -4,24 +4,28 @@ Stack: Prometheus + StatsD Exporter + Grafana + Great Expectations + Slack Webho
 
 ## Architecture
 
-Session 09 runs as a second Docker Compose stack alongside Session 07:
+Session 09 runs as **two Docker Compose stacks** that talk over `host.docker.internal`:
 
 ```
-session_07_security/    ← Airflow (webserver + scheduler + worker)
-session_09_monitoring/  ← Prometheus + StatsD Exporter + Grafana
+session_07_security/    ← Airflow (webserver + scheduler + worker)  ─┐  emits StatsD
+session_09_monitoring/  ← Prometheus + StatsD Exporter + Grafana    ←┘  host.docker.internal:8125
 ```
 
-The two stacks are on separate Docker networks. Airflow emits metrics via UDP to
-`host.docker.internal:8125`, which forwards to the StatsD Exporter on the host's port 8125.
+Airflow (in the session_07 stack) emits metrics via UDP to `host.docker.internal:8125`, which the
+session_09 StatsD Exporter receives on its `8125:9125/udp` mapping:
 
 ```
-Airflow → UDP → host.docker.internal:8125 → StatsD Exporter → Prometheus scrape → Grafana
+Airflow → UDP → host.docker.internal:8125 → StatsD Exporter → Prometheus scrape (15s) → Grafana
 ```
 
-Both stacks must be running before the demo:
+The session_09 order-pipeline DAG is **deployed into the session_07 Airflow** (see
+[§ Deploy the pipeline](#deploy-the-pipeline-into-session_07)), so its task runs emit the metrics the
+dashboards visualize and its Great Expectations check drives the data-quality alert.
+
+Both stacks must be up:
 
 ```bash
-cd session_07_security && docker-compose up -d
+cd session_07_security   && docker-compose up -d --build   # --build picks up GE + duckdb
 cd session_09_monitoring && docker-compose up -d
 ```
 
@@ -38,7 +42,7 @@ docker-compose ps
 | Prometheus | `http://localhost:9090` | — | — |
 | Grafana | `http://localhost:3000` | `admin` | `admin` |
 | StatsD Exporter metrics | `http://localhost:9102/metrics` | — | — |
-| Airflow | `http://localhost:8888` | `airflow` | `airflow` |
+| Airflow (session_07 stack) | `http://localhost:8888` | `airflow` | `airflow` |
 
 ## 2. Airflow StatsD config
 
@@ -51,10 +55,33 @@ AIRFLOW__METRICS__STATSD_PORT: '8125'
 AIRFLOW__METRICS__STATSD_PREFIX: 'airflow'
 ```
 
-> Note: StatsD Exporter listens on UDP port **9125** inside the container, mapped to host port **8125**
-> (`8125:9125/udp`). Airflow sends to `host.docker.internal:8125` which routes to the exporter.
+> The exporter listens on UDP **9125** inside its container, mapped to host **8125** (`8125:9125/udp`).
+> Airflow sends to `host.docker.internal:8125`, which routes to the exporter.
 
 Verify Prometheus is scraping: `http://localhost:9090/targets` — `airflow` job must be **UP**.
+
+## Deploy the pipeline into session_07
+
+The session_07 Airflow mounts this session's DAG and installs its runtime deps (already wired):
+
+- `session_07_security/docker-compose.yml` mounts `../session_09_monitoring/demo` →
+  `/opt/airflow/dags/session_09` and `../plugins` → `/opt/airflow/plugins`.
+- `session_07_security/Dockerfile` installs `great-expectations` + `duckdb` (rebuild with
+  `docker-compose up -d --build`).
+- An `.airflowignore` in `demo/` keeps `data/` (which holds `generate_data.py`) out of DAG parsing.
+
+After `--build`, the `session_09_order_pipeline` DAG appears in the session_07 Airflow UI.
+
+## DuckDB warehouse — host access
+
+The pipeline builds a local DuckDB warehouse at `session_09_monitoring/demo/data/session_09.duckdb`
+(bind-mounted into the session_07 Airflow at `/opt/airflow/dags/session_09/data`). It is gitignored.
+To inspect `bronze.orders` / `gold.fact_orders` from your laptop, point **DBeaver** (or the `duckdb`
+CLI) at that file while the DAG is **not** running (DuckDB is single-writer):
+
+```bash
+duckdb session_09_monitoring/demo/data/session_09.duckdb -c "SELECT COUNT(*) FROM gold.fact_orders;"
+```
 
 ## 3. Grafana dashboards
 
@@ -92,38 +119,33 @@ list of failed expectations before raising the exception.
 
 ## 5. Run the GE demo
 
-Generate sample data:
+The pipeline (`session_09_order_pipeline`) loads a parquet file into a local DuckDB warehouse
+(`bronze.orders`), validates it against the `orders_bronze_suite`, then builds `gold.fact_orders`
+and reconciles row counts. Which dataset it loads is controlled by the Airflow Variable
+`orders_dataset` (default `orders_clean.parquet`).
+
+The two sample files are committed under `demo/data/`. To regenerate them:
 
 ```bash
-cd session_09_monitoring/demo
-python data/generate_data.py
-# Creates:
-#   data/orders_clean.parquet  — 10,000 valid rows
-#   data/orders_broken.parquet — 200 null order_id, 150 negative amount, 10 duplicate order_id
+cd session_09_monitoring/demo/data
+python generate_data.py
+# Creates (in this folder):
+#   orders_clean.parquet  — 10,000 valid rows
+#   orders_broken.parquet — 200 null order_id, 150 negative amount, 10 duplicate order_id
 ```
 
-Run validation manually:
+**Happy path** — trigger the DAG with the default clean dataset; all 6 expectations pass and the
+pipeline runs through to `recon_row_count`.
 
-```python
-import great_expectations as gx
-import pandas as pd
+**Failure path** — in Airflow, **Admin → Variables → +**, add `orders_dataset` = `orders_broken.parquet`,
+then trigger the DAG again. The `ge_checkpoint_bronze`
+task fails on exactly 3 expectations (`expect_column_values_to_not_be_null`,
+`expect_column_values_to_be_unique`, `expect_column_values_to_be_between`), sends the Slack alert
+(when the Airflow Variable `slack_webhook_url` is set — otherwise it logs and no-ops), and raises —
+so `load_gold` and `recon_row_count` never run.
 
-context = gx.get_context(context_root_dir="great_expectations")
-
-# Clean data — all 6 expectations pass
-df_clean = pd.read_parquet("data/orders_clean.parquet")
-
-# Broken data — 3 expectations fail:
-# expect_column_values_to_not_be_null, expect_column_values_to_be_unique,
-# expect_column_values_to_be_between
-df_broken = pd.read_parquet("data/orders_broken.parquet")
-```
-
-View HTML report after a checkpoint run:
-
-```bash
-open great_expectations/uncommitted/data_docs/local_site/index.html
-```
+The task validates through an ephemeral GE context, so no files under `great_expectations/` are
+modified by a run.
 
 ## 6. GE Expectation Suite
 

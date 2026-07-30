@@ -24,5 +24,14 @@ RUN pip install --no-cache-dir \
     trino==0.328.0 \
     psycopg2-binary==2.9.9 \
     minio==7.2.7
+
+# Session 09 (monitoring) deploys its data-quality DAG into this Airflow.
+# great-expectations + duckdb power the ge_checkpoint task. NOTE: GE 0.18 pulls
+# its own pins; on this python3.8 image pip resolves a compatible pandas (<2.2)
+# automatically. If GE's deps clash with Airflow's constraints at build time,
+# pin them lower or bump the base image to apache/airflow:2.9.3-python3.11.
+RUN pip install --no-cache-dir \
+    great-expectations==0.18.19 \
+    duckdb==0.10.3
 ENV SPARK_HOME=/home/airflow/.local/lib/python3.8/site-packages/pyspark
 ENV PATH="${SPARK_HOME}/bin:${PATH}"

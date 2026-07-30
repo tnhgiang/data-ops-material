@@ -37,3 +37,8 @@ def notify_on_failure(context: dict) -> None:
 def notify_on_sla_miss(dag, _task_list, _blocking_task_list, slas, _blocking_tis) -> None:
     missed = ", ".join(f"`{sla.task_id}`" for sla in slas)
     _post_slack(f":warning: *{dag.dag_id}* SLA missed — tasks: {missed}")
+
+
+def send_slack_alert(message: str, level: str = "warning") -> None:
+    icon = ":red_circle:" if level == "critical" else ":warning:"
+    _post_slack(f"{icon} *DataOps Alert*\n{message}")

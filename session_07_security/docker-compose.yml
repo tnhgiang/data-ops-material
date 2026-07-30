@@ -42,6 +42,12 @@ x-airflow-common:
     - ./labs:/opt/airflow/dags/labs
     - ./logs:/opt/airflow/logs
     - ./demo/jobs:/opt/airflow/jobs
+    # Session 09 monitoring: deploy its data-quality DAG here so its runs emit
+    # StatsD metrics to the session_09 exporter. The whole demo/ tree is mounted
+    # so the DAG's relative paths to data/ and great_expectations/ resolve; an
+    # .airflowignore in that folder keeps data/ out of DAG parsing.
+    - ../session_09_monitoring/demo:/opt/airflow/dags/session_09
+    - ../plugins:/opt/airflow/plugins
     - ./conf/trino/certs:/opt/trino-certs:ro
     # Driver (airflow-worker) needs the Delta/S3A/Postgres JARs locally —
     # spark.jars in spark-defaults.conf references /opt/jars and the driver
