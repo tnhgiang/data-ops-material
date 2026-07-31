@@ -16,12 +16,14 @@ def test_silver_happy_case(con):
 
 @pytest.mark.xfail(reason="student must fix this")
 def test_silver_filters_null_customer(con):
+    # Bug3: INSERT has no AND customer_id IS NOT NULL — nulls reach silver
     # TODO: assert result["customer_id"].isna().sum() == 0
     raise NotImplementedError
 
 
 @pytest.mark.xfail(reason="student must fix this")
 def test_silver_rejects_negative_amount(con):
+    # Bug4: INSERT has no AND amount > 0 — negative amounts reach silver
     # TODO: assert (result["amount"] < 0).sum() == 0
     raise NotImplementedError
 

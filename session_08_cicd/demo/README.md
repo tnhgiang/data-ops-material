@@ -81,6 +81,8 @@ Walk through the `TOTAL` line. Point to at least one uncovered branch and ask "w
 ---
 
 ## Demo 3 — CD deploy DAG
+The simple flow for this demo/lab
+![image](image/architecture.png)
 
 Live-code `.github/workflows/cd.yml`.
 

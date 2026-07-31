@@ -44,3 +44,6 @@ pytest demo/tests/ --cov=demo/dags --cov=demo/jobs --cov-report=term-missing
 | `DagBag` import error | Airflow not installed locally | DAG tests are skipped locally — they run in CI where Airflow is available |
 | CD job not triggering | `workflow_run` requires CI workflow name to match exactly | check `workflows: ["DataOps CI"]` in cd.yml matches the `name:` in ci.yml |
 | CD job runs even when CI failed | missing `if` condition on deploy job | add `if: ${{ github.event.workflow_run.conclusion == 'success' }}` |
+
+## References:
+- You can select some hooks from Pre-commit and add them to your pipeline, or search for other hooks [here](https://github.com/pre-commit/pre-commit-hooks/tree/main/pre_commit_hooks).

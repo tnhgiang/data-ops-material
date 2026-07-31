@@ -11,7 +11,7 @@ with DAG(
     description="Orders pipeline",
     schedule="@daily",
     start_date=datetime(2026, 1, 1),
-    catchup=True,
+    catchup=True,  # TODO Bug1: backfills all history on first deploy — should be False
     max_active_runs=1,
     default_args=duckdb_default_args(),
     template_searchpath="/opt/airflow/dags/session_08/sql/order_pipeline",
@@ -30,4 +30,6 @@ with DAG(
     )
     reconcile = SQLCheckOperator(task_id="reconcile", sql="reconcile.sql")
 
-    load_bronze >> silver_transform >> reconcile >> load_gold
+    (
+        load_bronze >> silver_transform >> reconcile >> load_gold
+    )  # TODO Bug2: reconcile runs before load_gold — gold is never loaded
