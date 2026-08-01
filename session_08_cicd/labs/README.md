@@ -126,12 +126,12 @@ pytest labs/tests/test_spark/ -v
 **Before you fix anything**, the output for each group should look like:
 
 ```
-2 failed, 2 xfailed     ← test_dags
-3 failed, 2 xfailed     ← test_sql
-3 failed, 2 xfailed     ← test_spark
+4 failed     ← test_dags
+5 failed     ← test_sql
+5 failed     ← test_spark
 ```
 
-`xfailed` = test found a bug in the scaffold (expected). `failed` = stub not implemented yet.
+All tests start as `NotImplementedError` stubs — your job is to implement each one, then fix the bug until it passes.
 
 **Run all tests with coverage (from `session_08_cicd/`):**
 

@@ -86,6 +86,18 @@ The simple flow for this demo/lab
 
 Live-code `.github/workflows/cd.yml`.
 
+> **Airflow environment:** Session 08 reuses the session_07_security Docker stack.
+> If it is not already running, start it from the `session_07_security/` folder before
+> this demo:
+> ```bash
+> cd session_07_security
+> docker compose up -d
+> # wait ~60 s for the healthchecks to pass
+> curl -s -u airflow:airflow http://localhost:8888/health | python3 -m json.tool
+> ```
+> The `session_08_order_pipeline` DAG is mounted from `session_07_security/demo/dags/`
+> and will appear in the Airflow UI automatically once the stack is healthy.
+
 **One-time setup before the demo:**
 
 Install a self-hosted runner on the laptop — the runner receives jobs from GitHub and executes commands locally, no inbound SSH required:

@@ -1,14 +1,9 @@
-import pytest
-
-
-@pytest.mark.xfail(reason="student must fix this")
 def test_no_catchup(dagbag):
     # Bug1: catchup=True will silently backfill all history on first deploy
     # TODO: assert dag.catchup is False
     raise NotImplementedError
 
 
-@pytest.mark.xfail(reason="student must fix this")
 def test_task_dependency_order(dagbag):
     # Bug2: reconcile runs before load_gold — the gold table is never populated
     # TODO: assert load_gold is upstream of reconcile, not the other way round

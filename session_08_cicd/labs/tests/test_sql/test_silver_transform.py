@@ -1,6 +1,3 @@
-import pytest
-
-
 def _run(con, silver_sql, ds):
     stmts = [s.strip() for s in silver_sql.split(";") if s.strip()]
     for stmt in stmts:
@@ -14,14 +11,12 @@ def test_silver_happy_case(con):
     raise NotImplementedError
 
 
-@pytest.mark.xfail(reason="student must fix this")
 def test_silver_filters_null_customer(con):
     # Bug3: INSERT has no AND customer_id IS NOT NULL — nulls reach silver
     # TODO: assert result["customer_id"].isna().sum() == 0
     raise NotImplementedError
 
 
-@pytest.mark.xfail(reason="student must fix this")
 def test_silver_rejects_negative_amount(con):
     # Bug4: INSERT has no AND amount > 0 — negative amounts reach silver
     # TODO: assert (result["amount"] < 0).sum() == 0
