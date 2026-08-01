@@ -36,7 +36,7 @@ Show the three layers going green. Point out the coverage report in the `Unit te
 
 ## Demo 2 — Unit test edge cases
 
-Run `pytest -v` in the terminal after each group. Students must see the test output, not just the code.
+Run `pytest -v` in the terminal after each group. You must see the test output, not just the code.
 
 > **Note:** PySpark requires Java 8 or 11. Check your version with `java -version`. If you have Java 17+, set `JAVA_HOME` before running Spark tests:
 > ```bash
@@ -60,7 +60,7 @@ Point out `test_no_catchup`: this would have silently backfilled months of histo
 pytest demo/tests/test_sql/ -v
 ```
 
-Point out `test_silver_filters_null_customer` and `test_silver_rejects_negative_amount`: run the bronze SQL first so students see the NULL and negative rows in the source, then show silver blocks them.
+Point out `test_silver_filters_null_customer` and `test_silver_rejects_negative_amount`: run the bronze SQL first so you see the NULL and negative rows in the source, then show silver blocks them.
 
 **Group 3 — PySpark tests** (`demo/tests/test_spark/test_spark_transform.py`)
 

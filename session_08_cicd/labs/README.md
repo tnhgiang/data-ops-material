@@ -89,11 +89,14 @@ Your job: write a test that catches each bug, then fix the code until all tests 
 
 **Files to fix:**
 
-| File | Test stub |
-|---|---|
-| `labs/jobs/bronze2silver__orders.sql` | `labs/tests/test_sql/test_silver_transform.py` |
-| `labs/jobs/spark_transform.py` | `labs/tests/test_spark/test_spark_transform.py` |
-| `labs/jobs/dag_order_pipeline.py` | `labs/tests/test_dags/test_order_pipeline.py` |
+| File | Bugs | Test stub |
+|---|---|---|
+| `labs/jobs/bronze2silver__orders.sql` | Bug2, Bug3, Bug4 | `labs/tests/test_sql/test_silver_transform.py` |
+| `labs/jobs/spark_transform.py` | Bug1, Bug3 | `labs/tests/test_spark/test_spark_transform.py` |
+| `labs/jobs/dag_order_pipeline.py` | Bug1, Bug2 | `labs/tests/test_dags/test_order_pipeline.py` |
+
+Each file in `labs/jobs/` contains `# TODO BugN:` comments on the exact lines with bugs —
+read them first to understand what's wrong before writing any test.
 
 > This lab is test-driven: only `bronze2silver__orders.sql` is provided. The DAG references
 > `raw2bronze`/`silver2gold`/`reconcile` SQL that is not shipped here, so you diagnose and fix

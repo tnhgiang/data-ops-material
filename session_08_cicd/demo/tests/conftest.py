@@ -5,6 +5,18 @@ import duckdb
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "jobs"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "plugins")))
+
+# PySpark 3.5 requires Java 8–17. Java 21+ removes Subject.getSubject() used by Hadoop.
+# On macOS, point to Java 8 if the default JVM is newer.
+import subprocess
+
+_java8 = subprocess.run(
+    ["/usr/libexec/java_home", "-v", "1.8"],
+    capture_output=True, text=True
+).stdout.strip()
+if _java8:
+    os.environ.setdefault("JAVA_HOME", _java8)
 
 DEMO_DAGS_PATH = os.path.join(os.path.dirname(__file__), "..", "dags")
 SQL_PATH = os.path.join(DEMO_DAGS_PATH, "sql", "order_pipeline", "bronze2silver__orders.sql")
