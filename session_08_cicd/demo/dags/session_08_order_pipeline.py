@@ -16,7 +16,7 @@ with DAG(
     max_active_runs=1,
     default_args=duckdb_default_args(),
     sla_miss_callback=notify_on_sla_miss,
-    template_searchpath="/opt/airflow/dags/session_08/sql/order_pipeline",
+    template_searchpath="/opt/airflow/dags/sql/order_pipeline",
     tags=["session-08", "cicd", "duckdb"],
 ) as dag:
     load_bronze = SQLExecuteQueryOperator(

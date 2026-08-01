@@ -32,6 +32,7 @@ RUN pip install --no-cache-dir \
 # pin them lower or bump the base image to apache/airflow:2.9.3-python3.11.
 RUN pip install --no-cache-dir \
     great-expectations==0.18.19 \
-    duckdb==0.10.3
+    duckdb==0.10.3 \
+    airflow-provider-duckdb==0.2.0
 ENV SPARK_HOME=/home/airflow/.local/lib/python3.8/site-packages/pyspark
 ENV PATH="${SPARK_HOME}/bin:${PATH}"

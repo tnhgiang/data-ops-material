@@ -34,6 +34,7 @@ x-airflow-common:
     # verify TLS properly instead of verify=False.
     TRINO_CA_CERT: /opt/trino-certs/trino.pem
     AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
+    AIRFLOW_CONN_DUCKDB_DEFAULT: '{"conn_type": "duckdb", "host": "/opt/airflow/db/dwh.duckdb"}'
     # Point PySpark (installed in the Airflow image) to the same spark-defaults.conf
     # used by the Spark cluster, so the driver picks up spark.jars automatically.
     SPARK_CONF_DIR: /opt/spark/conf
@@ -54,6 +55,7 @@ x-airflow-common:
     # must be able to read them to load DeltaSparkSessionExtension at startup.
     - ../session_05_pyspark_lakehouse/jars:/opt/jars:ro
     - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+    - ./db:/opt/airflow/db
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -350,6 +352,7 @@ services:
           --lastname Admin \
           --role Admin \
           --email admin@example.com
+        airflow pools set duckdb_pool 1 "DuckDB single-writer pool"
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
