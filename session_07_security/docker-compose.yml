@@ -35,6 +35,7 @@ x-airflow-common:
     TRINO_CA_CERT: /opt/trino-certs/trino.pem
     AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
     AIRFLOW_CONN_DUCKDB_DEFAULT: '{"conn_type": "duckdb", "host": "/opt/airflow/db/dwh.duckdb"}'
+    AIRFLOW_CONN_SESSION_09_DUCKDB: '{"conn_type": "duckdb", "host": "/opt/airflow/dags/session_09/data/session_09.duckdb"}'
     # Point PySpark (installed in the Airflow image) to the same spark-defaults.conf
     # used by the Spark cluster, so the driver picks up spark.jars automatically.
     SPARK_CONF_DIR: /opt/spark/conf

@@ -1,2 +1,5 @@
 # unignore this demo data folder
 !.gitignore
+*.parquet
+*.duckdb
+*.duckdb.wal

@@ -15,13 +15,17 @@ Two hands-on labs on the monitoring stack (`session_09_monitoring/docker-compose
 ## Running lab code
 
 ```bash
-# Start the stack
-cd session_09_monitoring
-docker-compose up -d
+pip install -r session_09_monitoring/requirements.txt
 
-# Verify
-docker-compose ps
+# Lab 1 needs BOTH stacks: session_07 runs Airflow (and the pipeline DAG), session_09 runs monitoring.
+cd session_07_security   && docker compose up -d --build
+cd session_09_monitoring && docker compose up -d
+docker compose ps          # session_09 services must be "Up"
 ```
+
+- Lab 1 needs both stacks running and the `session_09_order_pipeline` DAG (deployed into the
+  session_07 Airflow) to have run at least once, so `af_agg_*` metrics exist in Prometheus.
+- Lab 2 runs entirely on your laptop with the committed parquet files — no Docker needed.
 
 ---
 
@@ -29,7 +33,8 @@ docker-compose ps
 
 The Ops team needs to be notified on Slack when the `session_09_order_pipeline` task duration exceeds SLA. Set up a Grafana alert rule that fires into a Slack channel.
 
-**Requirements:**
+Demo #4 in [`../demo/README.md`](../demo/README.md) shows the exact click-path for creating a Grafana
+alert and wiring a Slack contact point — follow that flow, with these values:
 
 | Field | Value |
 |---|---|
@@ -42,21 +47,25 @@ The Ops team needs to be notified on Slack when the `session_09_order_pipeline` 
 
 **Acceptance criteria:**
 
-- [ ] `docker-compose ps` — all services Up
-- [ ] Prometheus target `airflow` is UP at `http://localhost:9090/targets`
-- [ ] Grafana dashboard imported, at least 2 panels show data
-- [ ] Alert rule exists with correct condition and FOR duration
-- [ ] Slack test message received in channel
+- [ ] `docker compose ps` shows every service `Up`, and Prometheus target `airflow` is **UP** at
+      `http://localhost:9090/targets`.
+- [ ] The Slack **Test** from the contact point arrived in the channel.
+- [ ] The alert rule exists with condition `p95 > 300` and `FOR = 2m`.
 
 ---
 
-## Lab 2 — GE Data Quality Checkpoint
+## Lab 2 — Great Expectations Data Quality
 
-The data engineering team received a complaint that some orders in the pipeline had invalid amounts and missing IDs. Write a Great Expectations suite that catches data quality issues before they reach silver, and wire it into the DAG.
+**Ticket (DQ-118):** Finance reported orders with **negative amounts** and **missing order IDs**
+reaching their dashboards last week. Before we load anything to gold, we need a data-quality gate that
+rejects a batch like that. Build the expectation suite that would have caught it.
 
-**Dataset:** `demo/data/orders_broken.parquet`
+You are given a starter suite with two weak expectations that pass on *any* data, and a runner that
+validates a parquet file against that suite and prints, per expectation, the % of rows that failed.
 
-| Column | Type |
+**Files:**
+
+| File | Purpose |
 |---|---|
 | `order_id` | string |
 | `customer_id` | string |
