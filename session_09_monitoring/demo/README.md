@@ -77,7 +77,12 @@ To inspect `bronze.orders` / `gold.fact_orders` from your laptop, point **DBeave
 CLI) at that file while the DAG is **not** running (DuckDB is single-writer):
 
 ```bash
-duckdb session_09_monitoring/demo/data/session_09.duckdb -c "SELECT COUNT(*) FROM gold.fact_orders;"
+python3 -c "
+import duckdb
+con = duckdb.connect('session_09_monitoring/demo/data/session_09.duckdb', read_only=True)
+print(con.execute('SELECT COUNT(*) FROM gold.fact_orders').fetchone())
+con.close()
+"
 ```
 
 ## 3. Grafana dashboards

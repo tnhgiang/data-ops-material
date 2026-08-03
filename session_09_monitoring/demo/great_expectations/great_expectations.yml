@@ -47,6 +47,12 @@ fluent_datasources:
       orders_broken:
         type: dataframe
         batch_metadata: {}
+  runtime:
+    type: pandas
+    assets:
+      orders_silver_suite:
+        type: dataframe
+        batch_metadata: {}
 plugins_directory:
 notebooks:
 config_variables_file_path:

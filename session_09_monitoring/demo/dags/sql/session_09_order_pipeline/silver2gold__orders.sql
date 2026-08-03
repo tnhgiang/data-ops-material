@@ -1,0 +1,4 @@
+CREATE SCHEMA IF NOT EXISTS gold;
+
+CREATE OR REPLACE TABLE gold.fact_orders AS
+SELECT * FROM silver.orders;

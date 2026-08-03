@@ -2,7 +2,11 @@ import logging
 import os
 from datetime import datetime
 
+import duckdb
 import great_expectations as gx
+=======
+import duckdb
+>>>>>>> 27f922d (update lab for session 9)
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator
@@ -26,10 +30,18 @@ WAREHOUSE = DATA_DIR / "session_09.duckdb"
 )
 def order_pipeline():
     @task
-    def load_bronze(ds: str) -> str:
-        bronze_path = f"s3a://bronze/orders/date={ds}/orders.parquet"
-        logger.info("Loaded bronze: %s", bronze_path)
-        return bronze_path
+    def load_bronze() -> str:
+        dataset = Variable.get("orders_dataset", default_var="orders_clean.parquet")
+        source = DATA_DIR / dataset
+        con = duckdb.connect(str(WAREHOUSE))
+        con.execute("CREATE SCHEMA IF NOT EXISTS bronze")
+        con.execute(
+            "CREATE OR REPLACE TABLE bronze.orders AS SELECT * FROM read_parquet(?)",
+            [str(source)],
+        )
+        con.close()
+        logger.info("Loaded bronze.orders from %s", source)
+        return dataset
 
     @task
     def ge_checkpoint_bronze(bronze_path: str) -> None:
