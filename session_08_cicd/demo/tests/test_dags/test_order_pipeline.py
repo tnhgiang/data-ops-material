@@ -20,12 +20,14 @@ def test_no_cycle(dagbag):
 
 def test_task_dependency_order(dagbag):
     dag = dagbag.dags["session_08_order_pipeline"]
+    load_bronze = dag.get_task("load_bronze")
     load_gold = dag.get_task("load_gold")
     reconcile = dag.get_task("reconcile")
+    assert "init_schema" in load_bronze.upstream_task_ids
     assert "load_gold" in reconcile.upstream_task_ids
     assert "silver_transform" in load_gold.upstream_task_ids
 
 
 def test_task_count(dagbag):
     dag = dagbag.dags["session_08_order_pipeline"]
-    assert len(dag.tasks) == 4
+    assert len(dag.tasks) == 5
