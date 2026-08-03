@@ -4,13 +4,14 @@ Automate quality gates (lint, security scan, test coverage) and continuous deplo
 
 ## Stack
 
-| Tool | Role |
-|---|---|
-| GitHub Actions | CI/CD platform |
-| `ruff` | Lint + format |
-| `bandit` | Security scan |
-| `pytest` + `pytest-cov` | Unit test + 70% coverage gate |
-| self-hosted runner + `git pull` | CD deploy to Airflow Docker Compose |
+| Tool | Role | Reference |
+|---|---|---|
+| GitHub Actions | CI/CD platform | https://github.com/features/actions |
+| `ruff` | Lint + format | https://docs.astral.sh/ruff/formatter/ |
+| `bandit` | Security scan | https://bandit.readthedocs.io/en/latest/start.html |
+| `pytest` + `pytest-cov` | Unit test + 70% coverage gate | ... |
+| self-hosted runner + `git pull` | CD deploy to Airflow Docker Compose | https://docs.github.com/en/actions/concepts/runners/self-hosted-runners |
+| GitLAB CI | Container CI | https://github.com/marketplace?type=actions&category=container-ci |
 
 ## Structure
 

@@ -91,9 +91,9 @@ Your job: write a test that catches each bug, then fix the code until all tests 
 
 | File | Bugs | Test stub |
 |---|---|---|
-| `labs/jobs/bronze2silver__orders.sql` | Bug2, Bug3, Bug4 | `labs/tests/test_sql/test_silver_transform.py` |
-| `labs/jobs/spark_transform.py` | Bug1, Bug3 | `labs/tests/test_spark/test_spark_transform.py` |
-| `labs/jobs/dag_order_pipeline.py` | Bug1, Bug2 | `labs/tests/test_dags/test_order_pipeline.py` |
+| `labs/jobs/dag_order_pipeline.py` | Bug1 (catchup), Bug2 (wrong task order) | `labs/tests/test_dags/test_order_pipeline.py` |
+| `labs/jobs/bronze2silver__orders.sql` | Bug3 (NULL customer_id), Bug4 (negative amount) | `labs/tests/test_sql/test_silver_transform.py` |
+| `labs/jobs/spark_transform.py` | Bug1 (non-deterministic timestamp), Bug2 (NULL customer_id) | `labs/tests/test_spark/test_spark_transform.py` |
 
 Each file in `labs/jobs/` contains `# TODO BugN:` comments on the exact lines with bugs —
 read them first to understand what's wrong before writing any test.
@@ -102,38 +102,76 @@ read them first to understand what's wrong before writing any test.
 > `raw2bronze`/`silver2gold`/`reconcile` SQL that is not shipped here, so you diagnose and fix
 > from the failing tests — you do not run the full pipeline for this lab.
 
-**For each file:**
+---
 
-1. Open the test stub — find every `raise NotImplementedError` and every `@pytest.mark.xfail`
-2. Replace `raise NotImplementedError` with a real assertion
-3. Run the test — it must **FAIL** (the bug is still there)
-4. Fix the bug in `jobs/`
-5. Run again — it must **PASS**
+### Step 1 — Confirm all stubs are failing
 
-**Run each group independently (from `session_08_cicd/`):**
+Before writing anything, run the three test groups. Every test should raise `NotImplementedError`:
 
 ```bash
-# DAG structure tests — covers Bug1, Bug2
 pytest labs/tests/test_dags/ -v
+pytest labs/tests/test_sql/  -v
+pytest labs/tests/test_spark/ -v   # requires Java 8 or 11 — see Prerequisites above
+```
 
-# SQL transform tests — covers Bug3, Bug4
+Expected: `ERROR` on every test (NotImplementedError, not assertion failures yet).
+
+---
+
+### Step 2 — DAG structure bugs (`dag_order_pipeline.py`)
+
+Open `labs/tests/test_dags/test_order_pipeline.py`. Implement each stub:
+
+| Stub | What to assert |
+|---|---|
+| `test_no_catchup` | `dag.catchup is False` |
+| `test_task_dependency_order` | `load_gold` is upstream of `reconcile`; `silver_transform` is upstream of `load_gold` |
+
+```bash
+pytest labs/tests/test_dags/ -v
+```
+
+**Red → fix `dag_order_pipeline.py` → Green.**
+
+---
+
+### Step 3 — SQL transform bugs (`bronze2silver__orders.sql`)
+
+Open `labs/tests/test_sql/test_silver_transform.py`. Implement each stub:
+
+| Stub | What to assert |
+|---|---|
+| `test_silver_filters_null_customer` | no row in result has `customer_id IS NULL` |
+| `test_silver_rejects_negative_amount` | no row in result has `amount < 0` |
+
+```bash
 pytest labs/tests/test_sql/ -v
+```
 
-# Spark transform tests — covers Bug1, Bug3 (set JAVA_HOME if needed, see Prerequisites)
+**Red → add the missing `WHERE` clauses in `bronze2silver__orders.sql` → Green.**
+
+---
+
+### Step 4 — Spark transform bugs (`spark_transform.py`)
+
+Open `labs/tests/test_spark/test_spark_transform.py`. Implement each stub:
+
+| Stub | What to assert |
+|---|---|
+| `test_processed_at_is_deterministic` | calling `transform()` twice on the same input produces the same `processed_at` |
+| `test_null_customer_id_handled` | no row with `customer_id IS NULL` in the output |
+
+```bash
 pytest labs/tests/test_spark/ -v
 ```
 
-**Before you fix anything**, the output for each group should look like:
+**Red → fix `spark_transform.py` → Green.**
 
-```
-4 failed     ← test_dags
-5 failed     ← test_sql
-5 failed     ← test_spark
-```
+Hint for Bug1: `F.current_timestamp()` changes every call. Replace it with a value derived from `ds`.
 
-All tests start as `NotImplementedError` stubs — your job is to implement each one, then fix the bug until it passes.
+---
 
-**Run all tests with coverage (from `session_08_cicd/`):**
+### Step 5 — Full run with coverage
 
 ```bash
 pytest labs/tests/ --cov=labs/jobs --cov-report=term-missing --cov-fail-under=70
@@ -148,8 +186,8 @@ TOTAL    ...    70%+
 
 **Acceptance checklist**
 
-- [ ] All `xfail` tests now pass (remove the `@pytest.mark.xfail` decorator when they do)
 - [ ] All `NotImplementedError` stubs replaced with real assertions
+- [ ] All tests pass
 - [ ] Coverage ≥ 70%
 - [ ] No `print()` in any fixed file
 
