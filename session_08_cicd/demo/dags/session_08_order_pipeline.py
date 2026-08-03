@@ -19,6 +19,9 @@ with DAG(
     template_searchpath="/opt/airflow/dags/sql/order_pipeline",
     tags=["session-08", "cicd", "duckdb"],
 ) as dag:
+    init_schema = SQLExecuteQueryOperator(
+        task_id="init_schema", sql="create_schema.sql", **LOAD_OPTS
+    )
     load_bronze = SQLExecuteQueryOperator(
         task_id="load_bronze", sql="raw2bronze__orders.sql", **LOAD_OPTS
     )
@@ -33,4 +36,4 @@ with DAG(
     )
     reconcile = SQLCheckOperator(task_id="reconcile", sql="reconcile.sql")
 
-    load_bronze >> silver_transform >> load_gold >> reconcile
+    init_schema >> load_bronze >> silver_transform >> load_gold >> reconcile
