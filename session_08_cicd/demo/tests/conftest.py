@@ -51,8 +51,7 @@ def con():
             customer_id INTEGER,
             customer_name VARCHAR,
             amount DOUBLE,
-            order_date DATE,
-            PRIMARY KEY (order_id, order_date)
+            order_date DATE
         )
     """)
     conn.execute("""

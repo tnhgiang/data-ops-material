@@ -1,4 +1,4 @@
-FROM apache/airflow:2.9.3-python3.8
+FROM apache/airflow:2.9.3-python3.11
 
 USER root
 RUN apt-get update \
@@ -25,14 +25,9 @@ RUN pip install --no-cache-dir \
     psycopg2-binary==2.9.9 \
     minio==7.2.7
 
-# Session 09 (monitoring) deploys its data-quality DAG into this Airflow.
-# great-expectations + duckdb power the ge_checkpoint task. NOTE: GE 0.18 pulls
-# its own pins; on this python3.8 image pip resolves a compatible pandas (<2.2)
-# automatically. If GE's deps clash with Airflow's constraints at build time,
-# pin them lower or bump the base image to apache/airflow:2.9.3-python3.11.
 RUN pip install --no-cache-dir \
     great-expectations==0.18.19 \
-    duckdb==0.10.3 \
+    duckdb==1.5.5 \
     airflow-provider-duckdb==0.2.0
-ENV SPARK_HOME=/home/airflow/.local/lib/python3.8/site-packages/pyspark
+ENV SPARK_HOME=/home/airflow/.local/lib/python3.11/site-packages/pyspark
 ENV PATH="${SPARK_HOME}/bin:${PATH}"
