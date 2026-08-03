@@ -5,7 +5,7 @@ from pyspark.sql import functions as F
 def transform(df: DataFrame, ds: str) -> DataFrame:
     return df.filter(
         F.col("amount") > 0
-        # TODO Bug2: NULL customer_id rows are not filtered
+        # TODO Bug3: NULL customer_id rows are not filtered
         # Fix: add & F.col("customer_id").isNotNull()
     ).withColumn(
         "processed_at",

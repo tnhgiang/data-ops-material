@@ -6,7 +6,7 @@ INSERT INTO silver.orders
 SELECT
     order_id,
     customer_id,
-    customer_name,
+    customer_name,  -- TODO Bug2: customer_name is not in silver schema — remove this line
     amount,
     order_date
 FROM bronze.orders_raw

@@ -7,7 +7,8 @@ def _run(con, silver_sql, ds):
 
 
 def test_silver_happy_case(con):
-    # TODO: run _run(conn, sql, "2026-01-15") and assert len == 3, columns correct
+    # TODO: run _run(conn, sql, "2026-01-15"), assert len == 3
+    # and set(["order_id", "customer_id", "amount", "order_date"]).issubset(result.columns)
     raise NotImplementedError
 
 

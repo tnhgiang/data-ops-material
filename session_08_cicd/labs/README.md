@@ -92,8 +92,8 @@ Your job: write a test that catches each bug, then fix the code until all tests 
 | File | Bugs | Test stub |
 |---|---|---|
 | `labs/jobs/dag_order_pipeline.py` | Bug1 (catchup), Bug2 (wrong task order) | `labs/tests/test_dags/test_order_pipeline.py` |
-| `labs/jobs/bronze2silver__orders.sql` | Bug3 (NULL customer_id), Bug4 (negative amount) | `labs/tests/test_sql/test_silver_transform.py` |
-| `labs/jobs/spark_transform.py` | Bug1 (non-deterministic timestamp), Bug2 (NULL customer_id) | `labs/tests/test_spark/test_spark_transform.py` |
+| `labs/jobs/bronze2silver__orders.sql` | Bug2 (customer_name), Bug3 (NULL customer_id), Bug4 (negative amount) | `labs/tests/test_sql/test_silver_transform.py` |
+| `labs/jobs/spark_transform.py` | Bug1 (non-deterministic timestamp), Bug3 (NULL customer_id) | `labs/tests/test_spark/test_spark_transform.py` |
 
 Each file in `labs/jobs/` contains `# TODO BugN:` comments on the exact lines with bugs —
 read them first to understand what's wrong before writing any test.
