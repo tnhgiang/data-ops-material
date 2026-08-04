@@ -106,25 +106,32 @@ Metrics use the `af_agg_*` prefix (mapped by `statsd/statsd.yaml`). Key ones:
 > Flow: Airflow → UDP → StatsD Exporter → HTTP → Prometheus scrape (15s) → Grafana pull.
 > Debug right to left when a metric is missing.
 
-## 4. Grafana alert — DAG task failure
+## 4. Grafana alerts
 
-Alert rule `DAG Task Failure` is configured in folder `DataOps Alerts`:
+Five alert rules are auto-provisioned from `grafana/provisioning/alerting/alerts.yml` on startup —
+no manual import needed. They appear in Grafana under **Alerting → Alert rules → DataOps Alerts**.
 
-- **Condition:** `increase(af_agg_ti_failures{airflow_id="airflow"}[5m]) > 0`
-- **For:** 0s — fires immediately on first failure
-- **Contact point:** Slack webhook
-- **Repeat:** every 1 hour while still failing
+| Alert | Metric | Condition | Severity |
+|---|---|---|---|
+| DAG Task Failure | `af_agg_ti_failures` | increase 5m > 0 | critical |
+| Scheduler Heartbeat Missing | `af_agg_scheduler_heartbeat` | increase 3m < 1, for 2m | critical |
+| DAG Import Error | `af_agg_dag_processing_import_errors` | gauge > 0 | warning |
+| Executor Queue Buildup | `af_agg_executor_queued_tasks` | gauge > 5, for 3m | warning |
+| Zombie Tasks Detected | `af_agg_zombies_killed` | increase 10m > 0 | warning |
 
-When a GE checkpoint fails, the DAG task also fails → `af_agg_ti_failures` increments →
-Grafana alert fires within 1 minute. The DAG additionally sends a direct Slack alert with the
-list of failed expectations before raising the exception.
+To wire Slack notifications: **Alerting → Contact points → + Add contact point**, type Slack,
+paste your webhook URL. Then **Notification policies → Edit default policy** → set contact point.
+
+When a DAG task fails → `af_agg_ti_failures` increments → Grafana alert fires within 1 minute.
+The `ge_checkpoint_silver` task additionally sends a direct Slack alert with the list of failed
+expectations before raising the exception.
 
 ## 5. Run the GE demo
 
 The pipeline (`session_09_order_pipeline`) loads a parquet file into a local DuckDB warehouse
-(`bronze.orders`), validates it against the `orders_bronze_suite`, then builds `gold.fact_orders`
-and reconciles row counts. Which dataset it loads is controlled by the Airflow Variable
-`orders_dataset` (default `orders_clean.parquet`).
+(`bronze.orders`), transforms it to `silver.orders`, validates with the `orders_silver_suite`,
+then builds `gold.fact_orders` and reconciles row counts. Which dataset it loads is controlled
+by the Airflow Variable `orders_dataset` (default `orders_clean.parquet`).
 
 The two sample files are committed under `demo/data/`. To regenerate them:
 
@@ -139,26 +146,19 @@ python generate_data.py
 #   orders_broken.parquet — 200 null order_id, 150 negative amount, 10 duplicate order_id
 ```
 
-**Happy path** — trigger the DAG with the default clean dataset; all 6 expectations pass and the
-pipeline runs through to `recon_row_count`.
+Trigger the DAG with the default clean dataset; all 6 expectations pass and the pipeline runs
+through to `recon_row_count`.
 
-**Failure path** — in Airflow, **Admin → Variables → +**, add `orders_dataset` = `orders_broken.parquet`,
-then trigger the DAG again. The `ge_checkpoint_bronze`
-task fails on exactly 3 expectations (`expect_column_values_to_not_be_null`,
-`expect_column_values_to_be_unique`, `expect_column_values_to_be_between`), sends the Slack alert
-(when the Airflow Variable `slack_webhook_url` is set — otherwise it logs and no-ops), and raises —
-so `load_gold` and `recon_row_count` never run.
-
-The task validates through an ephemeral GE context, so no files under `great_expectations/` are
-modified by a run.
+Validation results are written to `great_expectations/uncommitted/data_docs/local_site/index.html`
+and viewable in a browser after each run.
 
 ## 6. GE Expectation Suite
 
-Suite: `great_expectations/expectations/orders_bronze_suite.json` — 6 expectations:
+Suite: `great_expectations/expectations/orders_silver_suite.json` — 6 expectations:
 
 | Expectation | Column | Rule |
 |---|---|---|
-| not_be_null | order_id | No null PKs |
+| not_be_null | order_id | No null order IDs |
 | be_unique | order_id | No duplicates |
 | be_between | amount | 0 – 1,000,000 |
 | not_be_null | order_date | Date required |

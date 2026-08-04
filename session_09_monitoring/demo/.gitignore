@@ -1,0 +1,3 @@
+great_expectations/uncommitted/
+great_expectations/**/.ge_store_backend_id
+*.duckdb

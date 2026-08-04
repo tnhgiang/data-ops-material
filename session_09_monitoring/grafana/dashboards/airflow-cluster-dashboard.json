@@ -25,7 +25,7 @@
         "collapsed": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "gridPos": {
           "h": 1,
@@ -39,7 +39,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "refId": "A"
           }
@@ -50,7 +50,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "",
         "fieldConfig": {
@@ -95,7 +95,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_scheduler_heartbeat{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -109,7 +109,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "fieldConfig": {
           "defaults": {
@@ -154,7 +154,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_dagbag_size{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -168,7 +168,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Seconds taken to scan and import all DAG files once",
         "fieldConfig": {
@@ -217,7 +217,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_dag_processing_total_parse_time{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -231,7 +231,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Number of errors from trying to parse DAG files",
         "fieldConfig": {
@@ -277,7 +277,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_dag_processing_import_errors{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -291,7 +291,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Zombie tasks killed",
         "fieldConfig": {
@@ -336,7 +336,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_zombies_killed{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -350,7 +350,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Overall task instances successes",
         "fieldConfig": {
@@ -395,7 +395,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_ti_successes{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -413,7 +413,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "",
         "fill": 1,
@@ -454,7 +454,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "rate(af_agg_operator_successes{airflow_id=\"$airflow_id\"}[1m]) * 60",
             "interval": "",
@@ -501,7 +501,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Total failures of given operator",
         "fill": 1,
@@ -542,7 +542,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "rate(af_agg_operator_failures{airflow_id=\"$airflow_id\"}[1m]) * 60",
             "interval": "",
@@ -585,7 +585,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "fieldConfig": {
           "defaults": {
@@ -629,7 +629,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_ti_failures{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -644,7 +644,7 @@
         "collapsed": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "gridPos": {
           "h": 1,
@@ -658,7 +658,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "refId": "A"
           }
@@ -673,7 +673,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "fill": 1,
         "fillGradient": 0,
@@ -713,7 +713,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "rate(af_agg_job_start{airflow_id=\"$airflow_id\"}[1m]) * 60",
             "instant": false,
@@ -757,7 +757,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "fieldConfig": {
           "defaults": {
@@ -801,7 +801,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_executor_open_slots{airflow_id=\"$airflow_id\"}",
             "instant": false,
@@ -817,7 +817,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "fieldConfig": {
           "defaults": {
@@ -861,7 +861,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_executor_queued_tasks{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -879,7 +879,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "fill": 1,
         "fillGradient": 0,
@@ -919,7 +919,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "rate(af_agg_job_end{airflow_id=\"$airflow_id\"}[1m]) * 60",
             "interval": "",
@@ -962,7 +962,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "fieldConfig": {
           "defaults": {
@@ -1006,7 +1006,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_executor_running_tasks{airflow_id=\"$airflow_id\"}",
             "interval": "",
@@ -1021,7 +1021,7 @@
         "collapsed": true,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "gridPos": {
           "h": 1,
@@ -1035,7 +1035,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "refId": "A"
           }
@@ -1050,7 +1050,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Seconds taken for a DagRun to reach success state",
         "fieldConfig": {
@@ -1097,7 +1097,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_dagrun_duration_success{airflow_id=\"$airflow_id\"} * 1000",
             "format": "time_series",
@@ -1143,7 +1143,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Seconds taken for a DagRun to reach failed state",
         "fieldConfig": {
@@ -1201,7 +1201,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_dagrun_duration_failed{airflow_id=\"$airflow_id\"} * 1000",
             "interval": "",
@@ -1248,7 +1248,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Sum of seconds taken to finish a tasks aggregated by DAG",
         "fieldConfig": {
@@ -1306,7 +1306,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "sum by (dag_id, quantile) (af_agg_dag_task_duration{airflow_id=\"$airflow_id\"}) * 1000",
             "format": "time_series",
@@ -1355,7 +1355,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Seconds taken to check DAG dependencies",
         "fieldConfig": {
@@ -1418,7 +1418,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_dagrun_dependency_check{airflow_id=\"$airflow_id\"} * 1000",
             "interval": "",
@@ -1465,7 +1465,7 @@
         "dashes": false,
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus-ds"
         },
         "description": "Seconds of delay between the scheduled DagRun start date and the actual DagRun start date",
         "fieldConfig": {
@@ -1513,7 +1513,7 @@
           {
             "datasource": {
               "type": "prometheus",
-              "uid": "PBFA97CFB590B2093"
+              "uid": "prometheus-ds"
             },
             "expr": "af_agg_dagrun_schedule_delay{airflow_id=\"$airflow_id\"} * 1000",
             "interval": "",

@@ -2,10 +2,9 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-import duckdb
 from airflow.decorators import dag, task
-from airflow.models import Variable
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator, SQLExecuteQueryOperator
+from dataops_common.duckdb_dag import LOAD_OPTS, duckdb_default_args
 from dataops_common.ge_checkpoint import run_ge_checkpoint
 
 logger = logging.getLogger(__name__)
@@ -13,36 +12,31 @@ logger = logging.getLogger(__name__)
 DEMO_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = DEMO_DIR / "data"
 GE_DIR = DEMO_DIR / "great_expectations"
-WAREHOUSE = DATA_DIR / "session_09.duckdb"
+WAREHOUSE = Path("/opt/airflow/db/dwh.duckdb")
+SQL_DIR = str(DEMO_DIR / "dags" / "sql" / "session_09_order_pipeline")
 
 
 @dag(
     dag_id="session_09_order_pipeline",
-    start_date=datetime(2026, 1, 1),
     schedule="@daily",
+    start_date=datetime(2026, 1, 1),
     catchup=False,
     max_active_runs=1,
+    default_args=duckdb_default_args(),
+    template_searchpath=[SQL_DIR],
     tags=["session-09", "monitoring", "data-quality"],
 )
 def order_pipeline():
-    @task
-    def load_bronze() -> str:
-        dataset = Variable.get("orders_dataset", default_var="orders_clean.parquet")
-        source = DATA_DIR / dataset
-        con = duckdb.connect(str(WAREHOUSE))
-        con.execute("CREATE SCHEMA IF NOT EXISTS bronze")
-        con.execute(
-            "CREATE OR REPLACE TABLE bronze.orders AS SELECT * FROM read_parquet(?)",
-            [str(source)],
-        )
-        con.close()
-        logger.info("Loaded bronze.orders from %s", source)
-        return dataset
+    init_schema = SQLExecuteQueryOperator(
+        task_id="init_schema", sql="create_schema.sql", **LOAD_OPTS
+    )
 
-    transform_silver = SQLExecuteQueryOperator(
-        task_id="transform_silver",
-        conn_id="session_09_duckdb",
-        sql="sql/session_09_order_pipeline/bronze2silver__orders.sql",
+    load_bronze = SQLExecuteQueryOperator(
+        task_id="load_bronze", sql="raw2bronze__orders.sql", **LOAD_OPTS
+    )
+
+    silver_transform = SQLExecuteQueryOperator(
+        task_id="silver_transform", sql="bronze2silver__orders.sql", **LOAD_OPTS
     )
 
     @task
@@ -55,19 +49,19 @@ def order_pipeline():
         )
 
     load_gold = SQLExecuteQueryOperator(
-        task_id="load_gold",
-        conn_id="session_09_duckdb",
-        sql="sql/session_09_order_pipeline/silver2gold__orders.sql",
+        task_id="load_gold", sql="silver2gold__orders.sql", **LOAD_OPTS
     )
 
-    recon_row_count = SQLCheckOperator(
-        task_id="recon_row_count",
-        conn_id="session_09_duckdb",
-        sql="sql/session_09_order_pipeline/recon_row_count.sql",
-    )
+    reconcile = SQLCheckOperator(task_id="reconcile", sql="reconcile.sql")
 
-    bronze = load_bronze()
-    bronze >> transform_silver >> ge_checkpoint_silver() >> load_gold >> recon_row_count
+    (
+        init_schema
+        >> load_bronze
+        >> silver_transform
+        >> ge_checkpoint_silver()
+        >> load_gold
+        >> reconcile
+    )
 
 
 order_pipeline()

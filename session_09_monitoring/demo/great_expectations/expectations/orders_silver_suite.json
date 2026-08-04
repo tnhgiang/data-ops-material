@@ -12,14 +12,14 @@
     {
       "expectation_type": "expect_column_values_to_not_be_null",
       "kwargs": {
-        "column": "order_id"
+        "column": "order_date"
       },
       "meta": {}
     },
     {
-      "expectation_type": "expect_column_values_to_be_unique",
+      "expectation_type": "expect_column_values_to_not_be_null",
       "kwargs": {
-        "column": "order_id"
+        "column": "customer_name"
       },
       "meta": {}
     },
@@ -27,28 +27,24 @@
       "expectation_type": "expect_column_values_to_be_between",
       "kwargs": {
         "column": "amount",
-        "max_value": 1000000,
-        "min_value": 0
+        "min_value": 20,
+        "max_value": 4000
       },
       "meta": {}
     },
     {
-      "expectation_type": "expect_column_values_to_not_be_null",
+      "expectation_type": "expect_column_values_to_be_between",
       "kwargs": {
-        "column": "order_date"
+        "column": "customer_id",
+        "min_value": 101,
+        "max_value": 5100
       },
       "meta": {}
     },
     {
-      "expectation_type": "expect_column_values_to_be_in_set",
+      "expectation_type": "expect_column_values_to_be_unique",
       "kwargs": {
-        "column": "status",
-        "value_set": [
-          "pending",
-          "paid",
-          "cancelled",
-          "refunded"
-        ]
+        "column": "order_id"
       },
       "meta": {}
     }

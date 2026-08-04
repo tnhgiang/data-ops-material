@@ -25,11 +25,6 @@ def run_ge_checkpoint(
     suite_name: str,
     sql: str,
 ) -> None:
-    """Validate a DuckDB query result against a GE expectation suite.
-
-    Saves the validation result to the filesystem store and rebuilds Data Docs.
-    Sends a Slack alert and raises ValueError on failure.
-    """
     con = duckdb.connect(str(warehouse), read_only=True)
     df = con.execute(sql).df()
     con.close()

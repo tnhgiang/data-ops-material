@@ -63,9 +63,9 @@ rejects a batch like that. Build the expectation suite that would have caught it
 You are given a starter suite with two weak expectations that pass on *any* data, and a runner that
 validates a parquet file against that suite and prints, per expectation, the % of rows that failed.
 
-**Files:**
+**Schema** (`demo/data/orders_broken.parquet`):
 
-| File | Purpose |
+| Column | Type |
 |---|---|
 | `order_id` | string |
 | `customer_id` | string |
@@ -75,9 +75,7 @@ validates a parquet file against that suite and prints, per expectation, the % o
 
 **Acceptance criteria:**
 
-- [ ] `expectations/orders_lab_suite.json` has at least 5 expectations
-- [ ] Running checkpoint against `orders_broken.parquet` fails at least 3 expectations
-- [ ] Data Docs shows correct % rows failed per expectation
-- [ ] Task `ge_checkpoint_orders` is in the DAG graph, after `load_bronze`
-- [ ] When data is broken: task fails and Slack receives alert
-- [ ] When data is clean: task passes and pipeline continues
+- [ ] `labs/jobs/orders_lab_suite.json` has at least 5 expectations
+- [ ] `python labs/jobs/run_checkpoint.py demo/data/orders_broken.parquet` exits non-zero and at least 3 expectations show `FAIL`
+- [ ] `python labs/jobs/run_checkpoint.py demo/data/orders_clean.parquet` exits 0 and all expectations show `PASS`
+- [ ] Output log prints `% rows failed` per failing expectation
