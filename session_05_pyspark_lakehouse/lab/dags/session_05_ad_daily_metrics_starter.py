@@ -8,7 +8,7 @@ from pathlib import Path
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from dataops_common.notifications import notify_on_failure  # noqa: F401 (for the DAG TODO)
+from dataops_common.notifications import notify_on_failure
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def _spark_submit(task_id: str, application: str) -> SparkSubmitOperator:
         "retries": 3,
         "retry_delay": timedelta(minutes=5),
         "execution_timeout": timedelta(hours=2),
-        # DAG TODO: add on_failure_callback=notify_on_failure so a failed run alerts.
+        "on_failure_callback": notify_on_failure,
     },
     tags=["session-05", "lab", "exercise", "ads"],
 )
@@ -89,15 +89,26 @@ def session_05_ad_daily_metrics_starter():
 
     @task(task_id="reconcile__silver_gold")
     def reconcile(ds=None):
-        # Given: sql/reconcile.sql runs entirely in Trino (no raw scan) and returns one row.
         fact_rows, fact_distinct, fact_impr, agg_impr, bad_rows, prev_rows = _reconcile_metrics(ds)
 
-        # Lab 3 — raise (fail the task) when a check does not hold:
-        #   dedup:     fact_rows == fact_distinct   (no duplicate event_ids)
-        #   agg tie:   fact_impr == agg_impr
-        #   rules:     bad_rows == 0
-        #   volume:    prev_rows and abs(fact_rows - prev_rows) / prev_rows > MAX_DAY_OVER_DAY_DRIFT
-        raise NotImplementedError("Lab 3: implement the reconcile checks")
+        if fact_rows == 0:
+            raise ValueError(f"silver.fact_ad_events is empty for {ds}")
+        if fact_rows != fact_distinct:
+            raise ValueError(
+                f"duplicate event_ids for {ds}: rows={fact_rows} distinct={fact_distinct}"
+            )
+        if fact_impr != agg_impr:
+            raise ValueError(f"impressions mismatch for {ds}: fact={fact_impr} agg={agg_impr}")
+        if bad_rows:
+            raise ValueError(f"{bad_rows} gold rows break a business rule for {ds}")
+        if prev_rows and abs(fact_rows - prev_rows) / prev_rows > MAX_DAY_OVER_DAY_DRIFT:
+            raise ValueError(
+                f"day-over-day volume drift for {ds}: today={fact_rows} prev={prev_rows}"
+            )
+
+        log.info(
+            "Reconcile passed for %s: %d rows, %d impressions, 0 bad rows", ds, fact_rows, fact_impr
+        )
 
     validate_raw_file() >> build_fact_ad_events >> aggregate_ad_daily >> reconcile()
 

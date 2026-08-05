@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 
 from lakehouse_common import build_spark, get_logger
-from pyspark.sql import Window  # noqa: F401 (for the TODO)
-from pyspark.sql.functions import col, row_number, to_date  # noqa: F401
+from pyspark.sql import Window
+from pyspark.sql.functions import col, row_number, to_date
 
 log = get_logger("build_fact_ad_events")
 
@@ -22,19 +22,30 @@ df = spark.read.option("header", "true").option("inferSchema", "true").csv(raw_p
 if df.count() == 0:
     raise ValueError(f"No data found at {raw_path}")
 
-# ---- TODO 1: clean + dedup ----
-# - Cast each column in ID_COLUMNS to "string".
-# - Keep event_type in ('impression', 'click'); add event_date = to_date(event_ts).
-# - Dedup by event_id, keeping the earliest event_ts (a retry sends the same event twice):
-#       w = Window.partitionBy("event_id").orderBy(col("event_ts").asc())
-#       df = df.withColumn("_rn", row_number().over(w)).filter(col("_rn") == 1).drop("_rn")
-raise NotImplementedError("TODO 1: clean + dedup the events")
+# 1) normalize id columns -> string (giữ type ổn định khi Day 3 đổi campaign_id sang string)
+for c in ID_COLUMNS:
+    df = df.withColumn(c, col(c).cast("string"))
 
-# ---- TODO 2: select known columns, then idempotent load into silver.fact_ad_events ----
-# - Keep only columns the fact expects (so an unexpected source column isn't written):
-#       df = df.select([c for c in KNOWN_COLUMNS if c in df.columns] + ["event_date"])
-# - Write Delta, mode("overwrite"), .option("replaceWhere", f"event_date = '{ds}'"),
-#   .save("s3a://silver/fact_ad_events"). (Lab 3 revisits this when the source adds a column.)
-# log.info("silver.fact_ad_events loaded for %s: %d rows", ds, df.count())
+# 2) chỉ giữ impression/click, thêm event_date
+df = df.filter(col("event_type").isin("impression", "click"))
+df = df.withColumn("event_date", to_date(col("event_ts")))
+
+# 3) dedup theo event_id, giữ event_ts sớm nhất (retry gửi trùng -> đếm 2 lần là sai)
+w = Window.partitionBy("event_id").orderBy(col("event_ts").asc())
+df = df.withColumn("_rn", row_number().over(w)).filter(col("_rn") == 1).drop("_rn")
+
+# 4) chỉ ghi các cột đã biết (cột lạ ngoài ý muốn bị drop)
+df = df.select([c for c in KNOWN_COLUMNS if c in df.columns] + ["event_date"])
+
+# 5) idempotent load + mergeSchema để nhận cột mới (Day 2/3)
+(
+    df.repartition("event_date")
+    .write.format("delta")
+    .mode("overwrite")
+    .option("replaceWhere", f"event_date = '{ds}'")
+    .option("mergeSchema", "true")
+    .save("s3a://silver/fact_ad_events")
+)
+log.info("silver.fact_ad_events loaded for %s: %d rows", ds, df.count())
 
 spark.stop()

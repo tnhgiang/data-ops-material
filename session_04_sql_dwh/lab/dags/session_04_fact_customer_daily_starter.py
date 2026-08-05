@@ -1,25 +1,26 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow.models.dag import DAG
 from airflow.providers.common.sql.operators.sql import (
     SQLCheckOperator,
     SQLExecuteQueryOperator,
 )
-from dataops_common.notifications import notify_on_failure  # noqa: F401 (for TODO #1)
+from dataops_common.notifications import notify_on_failure
 
 default_args = {
     "owner": "dataops-class",
     "conn_id": "duckdb_default",
-    "pool": "duckdb_pool",  # DuckDB single-writer: serialize warehouse access
-    # TODO #1: add retries=2, retry_delay=timedelta(minutes=1),
-    #          and on_failure_callback=notify_on_failure
+    "pool": "duckdb_pool",
+    "retries": 2,
+    "retry_delay": timedelta(minutes=1),
+    "on_failure_callback": notify_on_failure,
 }
 
 with DAG(
     dag_id="session_04_fact_customer_daily_starter",
-    description="LAB 1 — idempotent daily rollup fact (complete the .sql TODOs)",
+    description="LAB 1 — idempotent daily rollup fact (fact_customer_daily)",
     schedule="@daily",
     start_date=datetime(2024, 1, 1),
     catchup=False,

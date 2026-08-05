@@ -29,8 +29,10 @@ x-airflow-common:
   volumes:
     - ./demo/dags:/opt/airflow/dags/session_05_demo
     - ./lab/dags:/opt/airflow/dags/session_05_lab
+    - ./homework/submissions:/opt/airflow/dags/session_05_homework
     - ./demo/jobs:/opt/airflow/jobs/demo
     - ./lab/jobs:/opt/airflow/jobs/lab
+    - ./homework/submissions:/opt/airflow/jobs/homework
     - ./jobs:/opt/airflow/jobs/common
     - ./logs:/opt/airflow/logs
     - ./jars:/opt/jars
@@ -157,6 +159,7 @@ services:
       # so the bind mounts resolve reliably across container recreations.
       - ./demo/jobs:/opt/jobs/demo
       - ./lab/jobs:/opt/jobs/lab
+      - ./homework/submissions:/opt/jobs/homework
       - ./jars:/opt/jars
       # Jars + Delta/S3A defaults so `docker exec spark-master spark-submit|spark-sql`
       # needs no --jars / --conf. Only on the master (where those commands run).
@@ -178,6 +181,7 @@ services:
       # so the bind mounts resolve reliably across container recreations.
       - ./demo/jobs:/opt/jobs/demo
       - ./lab/jobs:/opt/jobs/lab
+      - ./homework/submissions:/opt/jobs/homework
       - ./jars:/opt/jars
     depends_on:
       - spark-master

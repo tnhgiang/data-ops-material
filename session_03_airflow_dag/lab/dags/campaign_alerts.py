@@ -1,9 +1,7 @@
 """
-STARTER DAG — you complete the body. See the "Exercise" section in lab/README.md.
-
 Flags campaigns whose CTR is below a threshold, downstream of
-campaign_daily_metrics. The pattern mirrors campaign_spend_report — read that
-DAG first, then fill in the TODOs in flag_low_ctr.
+campaign_daily_metrics. Mirrors campaign_spend_report — same sensor pattern,
+different metric.
 """
 
 from __future__ import annotations
@@ -30,7 +28,7 @@ default_args = {
 
 @dag(
     dag_id="session_03_campaign_alerts",
-    description="STARTER — flag low-CTR campaigns (complete the TODOs)",
+    description="Flag low-CTR campaigns — runs after campaign_daily_metrics.reconcile",
     schedule="@daily",
     start_date=datetime(2024, 1, 1),
     catchup=False,
@@ -51,17 +49,23 @@ def campaign_alerts():
 
     @task
     def flag_low_ctr(logical_date: datetime | None = None) -> dict:
-        # TODO 1: read the Variable "min_ctr" (default 0.15) as a float
-        # TODO 2: read the published "campaign_metrics" partition for logical_date
-        # TODO 3: keep campaigns with ctr < min_ctr; sum their spend_usd (wasted spend)
-        # TODO 4: build a report dict: date, min_ctr, low_ctr_campaigns, wasted_spend_usd
-        # TODO 5: write it to the "reports" / "campaign_low_ctr" partition (idempotent)
-        # TODO 6: log the report with log.info(...) and return it
-        raise NotImplementedError("Complete flag_low_ctr — see the TODOs and lab/README.md")
+        min_ctr = float(Variable.get("min_ctr", default_var=0.15))
+        metrics = read_partition("published", "campaign_metrics", logical_date)
+        low_ctr = [m for m in metrics if m["ctr"] < min_ctr]
+        wasted = round(sum(m["spend_usd"] for m in low_ctr), 2)
+        report = {
+            "date": logical_date.strftime("%Y-%m-%d"),
+            "min_ctr": min_ctr,
+            "low_ctr_campaigns": [m["campaign"] for m in low_ctr],
+            "wasted_spend_usd": wasted,
+        }
+        write_partition("reports", "campaign_low_ctr", logical_date, [report])
+        log.info("Low-CTR alert: %s", report)
+        return report
 
     alert = flag_low_ctr()
 
-    # TODO 7: make `alert` run only after `wait_for_metrics` (hint: use >>)
+    wait_for_metrics >> alert
 
 
 campaign_alerts()
