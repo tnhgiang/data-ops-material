@@ -70,43 +70,6 @@ You are given:
 - `labs/jobs/orders_lab_suite.json` — starter suite with 2 placeholder expectations (both pass on any data)
 - `labs/jobs/run_checkpoint.py` — validates a parquet file against the suite and prints per-expectation results
 
-**Step 0 — Init GE project**
-
-```bash
-cd session_09_monitoring/labs
-great_expectations init
-```
-
-This creates the following structure:
-
-```
-labs/great_expectations/
-├── great_expectations.yml       # keep — GE project config
-├── expectations/                # keep — put your suite JSON here
-├── checkpoints/                 # remove — not used
-├── profilers/                   # remove — not used
-├── plugins/                     # remove — not used
-└── uncommitted/
-    ├── config_variables.yml     # remove — not used
-    ├── data_docs/               # keep — HTML reports written here at runtime
-    └── validations/             # keep — validation results written here at runtime
-```
-
-Clean up the folders you don't need:
-
-```bash
-cd session_09_monitoring/labs
-rm -rf great_expectations/checkpoints great_expectations/profilers great_expectations/plugins
-rm great_expectations/uncommitted/config_variables.yml
-```
-
-Add to `labs/.gitignore` so runtime output is not committed:
-
-```
-great_expectations/uncommitted/
-great_expectations/**/.ge_store_backend_id
-```
-
 **Step 1 — Explore the data**
 
 Generate the sample files if not already done:
