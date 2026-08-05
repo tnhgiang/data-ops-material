@@ -18,6 +18,7 @@ DEFAULT_DATASET = JOBS_DIR.parent.parent / "demo" / "data" / "orders_broken.parq
 def run(dataset: Path) -> bool:
     df = duckdb.connect().execute("SELECT * FROM read_parquet(?)", [str(dataset)]).df()
 
+    # This lab uses ephemeral mode in GE.
     context = gx.get_context(mode="ephemeral")
     asset = context.sources.add_pandas("lab").add_dataframe_asset("orders")
     batch_request = asset.build_batch_request(dataframe=df)
