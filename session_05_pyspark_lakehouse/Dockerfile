@@ -29,6 +29,7 @@ USER airflow
 COPY requirements_local.txt /tmp/requirements_local.txt
 RUN pip install --no-cache-dir \
     -r /tmp/requirements_local.txt \
-    apache-airflow-providers-apache-spark==4.7.1
+    apache-airflow-providers-apache-spark==4.7.1 \
+    apache-airflow-providers-openlineage==1.8.0
 ENV SPARK_HOME=/home/airflow/.local/lib/python3.8/site-packages/pyspark
 ENV PATH="${SPARK_HOME}/bin:${PATH}"
