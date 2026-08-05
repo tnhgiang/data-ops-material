@@ -71,15 +71,15 @@ After `--build`, the `session_09_order_pipeline` DAG appears in the session_07 A
 
 ## DuckDB warehouse — host access
 
-The pipeline builds a local DuckDB warehouse at `session_09_monitoring/demo/data/session_09.duckdb`
-(bind-mounted into the session_07 Airflow at `/opt/airflow/dags/session_09/data`). It is gitignored.
-To inspect `bronze.orders` / `gold.fact_orders` from your laptop, point **DBeaver** (or the `duckdb`
-CLI) at that file while the DAG is **not** running (DuckDB is single-writer):
+The pipeline writes to the shared DuckDB warehouse at `session_07_security/db/dwh.duckdb`
+(bind-mounted into the session_07 Airflow at `/opt/airflow/db/dwh.duckdb`). It is gitignored.
+To inspect `bronze.orders_raw` / `gold.fact_orders` from your laptop, point **DBeaver** (or the
+`duckdb` CLI) at that file while the DAG is **not** running (DuckDB is single-writer):
 
 ```bash
 python3 -c "
 import duckdb
-con = duckdb.connect('session_09_monitoring/demo/data/session_09.duckdb', read_only=True)
+con = duckdb.connect('session_07_security/db/dwh.duckdb', read_only=True)
 print(con.execute('SELECT COUNT(*) FROM gold.fact_orders').fetchone())
 con.close()
 "
@@ -128,29 +128,27 @@ expectations before raising the exception.
 
 ## 5. Run the GE demo
 
-The pipeline (`session_09_order_pipeline`) loads a parquet file into a local DuckDB warehouse
-(`bronze.orders`), transforms it to `silver.orders`, validates with the `orders_silver_suite`,
-then builds `gold.fact_orders` and reconciles row counts. Which dataset it loads is controlled
-by the Airflow Variable `orders_dataset` (default `orders_clean.parquet`).
+The pipeline (`session_09_order_pipeline`) loads a parquet file into `bronze.orders_raw`,
+transforms it to `silver.orders`, validates with the `orders_silver_suite`, then builds
+`gold.fact_orders` and reconciles row counts. Which dataset it loads is controlled by the
+Airflow Variable `orders_dataset` — set it to the full path of the parquet file. When the
+Variable is absent the pipeline defaults to `/opt/airflow/dags/session_09/data/orders_clean.parquet`.
 
-The two sample files are committed under `demo/data/`. To regenerate them:
+The sample parquet files are gitignored. Generate them once before triggering the DAG:
 
 ```bash
-# pyarrow is required — install once if not already present
+# Requires Python 3.11+
 pip install -r session_09_monitoring/requirements.txt
 
 cd session_09_monitoring/demo/data
 python generate_data.py
 # Creates (in this folder):
 #   orders_clean.parquet  — 10,000 valid rows
-#   orders_broken.parquet — 200 null order_id, 150 negative amount, 10 duplicate order_id
+#   orders_broken.parquet — 200 null customer_id, 150 negative amount, 10 duplicate order_id
 ```
 
-Trigger the DAG with the default clean dataset; all 6 expectations pass and the pipeline runs
-through to `recon_row_count`.
-
-Validation results are written to `great_expectations/uncommitted/data_docs/local_site/index.html`
-and viewable in a browser after each run.
+Trigger the DAG; all 6 expectations pass on the clean dataset and the pipeline runs through
+to `reconcile`. GE validation output is logged to the Airflow task log — no local files written.
 
 ## 6. GE Expectation Suite
 
@@ -158,12 +156,12 @@ Suite: `great_expectations/expectations/orders_silver_suite.json` — 6 expectat
 
 | Expectation | Column | Rule |
 |---|---|---|
-| not_be_null | order_id | No null order IDs |
-| be_unique | order_id | No duplicates |
-| be_between | amount | 0 – 1,000,000 |
-| not_be_null | order_date | Date required |
-| be_in_set | status | pending / paid / cancelled / refunded |
 | row_count_between | — | min 1 row |
+| not_be_null | order_date | Date required |
+| not_be_null | customer_name | Name required |
+| be_between | amount | 20 – 4,000 (business range) |
+| be_between | customer_id | 101 – 5,100 (valid customer range) |
+| be_unique | order_id | No duplicates |
 
 ## Demo simplifications
 

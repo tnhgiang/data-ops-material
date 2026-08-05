@@ -1,3 +1,6 @@
 great_expectations/uncommitted/
+great_expectations/checkpoints/
 great_expectations/**/.ge_store_backend_id
+great_expectations/great_expectations.yml
 *.duckdb
+data/*.parquet

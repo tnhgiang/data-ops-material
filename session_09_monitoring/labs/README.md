@@ -25,7 +25,7 @@ docker compose ps          # session_09 services must be "Up"
 
 - Lab 1 needs both stacks running and the `session_09_order_pipeline` DAG (deployed into the
   session_07 Airflow) to have run at least once, so `af_agg_*` metrics exist in Prometheus.
-- Lab 2 runs entirely on your laptop with the committed parquet files — no Docker needed.
+- Lab 2 runs entirely on your laptop — no Docker needed. Generate the parquet files first with `cd session_09_monitoring/demo/data && python generate_data.py`.
 
 ---
 
@@ -67,11 +67,11 @@ validates a parquet file against that suite and prints, per expectation, the % o
 
 | Column | Type |
 |---|---|
-| `order_id` | string |
-| `customer_id` | string |
-| `amount` | float |
-| `status` | string |
-| `order_date` | date |
+| `order_id` | BIGINT |
+| `customer_id` | DOUBLE |
+| `customer_name` | VARCHAR |
+| `amount` | DOUBLE |
+| `order_date` | DATE |
 
 **Acceptance criteria:**
 
