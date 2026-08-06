@@ -55,7 +55,8 @@ AIRFLOW__METRICS__STATSD_PORT: "8125"
 AIRFLOW__METRICS__STATSD_PREFIX: "airflow"
 ```
 
-Verify at `http://localhost:9090/targets` — the `airflow` job must be UP.
+This is an example how service expose metrics, you can visit this page [airflow metrics](https://airflow.apache.org/docs/apache-airflow/2.9.3/administration-and-deployment/logging-monitoring/metrics.html) to explore more metrics from Airflow.
+Verify at `http://localhost:9090/targets` (this is Prometheus Services) — the `airflow` job must be UP.
 
 ## Deploy the pipeline into session_07
 
@@ -105,6 +106,8 @@ Metrics use the `af_agg_*` prefix (mapped by `statsd/statsd.yaml`). Key ones:
 
 > Flow: Airflow → UDP → StatsD Exporter → HTTP → Prometheus scrape (15s) → Grafana pull.
 > Debug right to left when a metric is missing.
+
+Ref: https://github.com/databand-ai/airflow-dashboards
 
 ## 4. Grafana alerts
 
