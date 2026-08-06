@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 
 import trino
 from airflow.decorators import dag, task
-from airflow.lineage.entities import File
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from dataops_common.notifications import notify_on_failure
 
@@ -52,8 +51,6 @@ def session_10_order_pipeline():
         py_files=PY_FILES,
         conf=SPARK_CONF,
         verbose=False,
-        inlets=[File(url="s3a://bronze/orders/{{ ds }}.csv")],
-        outlets=[File(url="s3a://bronze/marketplace_orders")],
     )
 
     silver_transform = SparkSubmitOperator(
@@ -65,8 +62,6 @@ def session_10_order_pipeline():
         py_files=PY_FILES,
         conf=SPARK_CONF,
         verbose=False,
-        inlets=[File(url="s3a://bronze/marketplace_orders")],
-        outlets=[File(url="s3a://silver/orders")],
     )
 
     gold_aggregate = SparkSubmitOperator(
@@ -78,8 +73,6 @@ def session_10_order_pipeline():
         py_files=PY_FILES,
         conf=SPARK_CONF,
         verbose=False,
-        inlets=[File(url="s3a://silver/orders")],
-        outlets=[File(url="s3a://gold/fact_daily_revenue")],
     )
 
     @task(task_id="reconciliation")

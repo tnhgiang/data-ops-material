@@ -33,3 +33,7 @@ RUN pip install --no-cache-dir \
     apache-airflow-providers-openlineage==1.8.0
 ENV SPARK_HOME=/home/airflow/.local/lib/python3.8/site-packages/pyspark
 ENV PATH="${SPARK_HOME}/bin:${PATH}"
+# OpenLineage Spark listener must be in $SPARK_HOME/jars/ (bootstrap classpath).
+# Adding it via --jars or spark.jars loads it too late for spark.extraListeners.
+RUN wget -q -O "${SPARK_HOME}/jars/openlineage-spark_2.12-1.9.1.jar" \
+    "https://repo1.maven.org/maven2/io/openlineage/openlineage-spark_2.12/1.9.1/openlineage-spark_2.12-1.9.1.jar"
