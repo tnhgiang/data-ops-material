@@ -19,26 +19,7 @@ The dataset covers **30 days of transactions** from `2026-06-01` to `2026-06-30`
 ---
 
 ## 2. Three Data Sources
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    ShopVN Data Environment                   │
-│                                                              │
-│  ┌──────────────┐   ┌──────────────┐   ┌─────────────────┐  │
-│  │  PostgreSQL  │   │  REST API    │   │      SFTP       │  │
-│  │  :5434       │   │  :8000       │   │      :2222      │  │
-│  │              │   │              │   │                 │  │
-│  │  9 tables    │   │  Shipment    │   │  Marketplace    │  │
-│  │  ~210k orders│   │  tracking    │   │  daily CSV      │  │
-│  │  direct only │   │  GHN / GHTK  │   │  Lazada/Shopee  │  │
-│  │              │   │              │   │  /TikTok        │  │
-│  └──────┬───────┘   └──────┬───────┘   └───────┬─────────┘  │
-│         │                  │                   │             │
-│    JOIN KEY:          JOIN KEY:            JOIN KEY:         │
-│    order_id ──────── order_id     shopvn_product_id ────────►│
-│                                   → products.product_id      │
-└─────────────────────────────────────────────────────────────┘
-```
+![datasource](images/datasources.png)
 
 ### Source 1 — PostgreSQL (OLTP Database)
 
@@ -86,28 +67,7 @@ Path:     /marketplace/incoming/
 ## 3. PostgreSQL Schema
 
 ### 3.1 Entity Relationship Overview
-
-```
-customers (1) ──────────────────────────── (N) orders
-                                                  │
-vouchers  (1) ──────────────────────────── (N) orders
-                                                  │
-                                    ┌─────────────┤
-                                    │             │
-                             (N) order_items      │
-                                    │             │
-                         products (1)             │
-                                │                 │
-                    inventory (1:1)               │
-                                │                 │
-                  inventory_transactions (N)       │
-                                                  │
-                                         (N) returns
-                                                  │
-                              product_reviews (N) ┘
-                               also FK → products
-                               also FK → customers
-```
+![datasource](images/ERD.png)
 
 ### 3.2 Table Definitions
 

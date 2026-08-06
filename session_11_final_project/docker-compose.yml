@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: anhnguyen1611/masterclass-dataops-postgres:latest
+    image: anhnguyen1611/masterclass-dataops-postgres:v1.1.0
     container_name: masterclass-dataops-postgres
     ports:
       - "5434:5432"
@@ -18,7 +18,7 @@ services:
       - shopvn-net
 
   api:
-    image: anhnguyen1611/masterclass-dataops-api:latest
+    image: anhnguyen1611/masterclass-dataops-api:v1.1.0
     container_name: masterclass-dataops-api
     ports:
       - "8000:8000"
@@ -41,7 +41,7 @@ services:
       - shopvn-net
 
   sftp:
-    image: anhnguyen1611/masterclass-dataops-sftp:latest
+    image: anhnguyen1611/masterclass-dataops-sftp:v1.1.0
     container_name: masterclass-dataops-sftp
     ports:
       - "2222:22"
