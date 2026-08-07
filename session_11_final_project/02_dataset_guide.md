@@ -52,6 +52,9 @@ GET /v1/shipments?order_ids=id1,id2,...   (max 50 per request)
 
 ### Source 3 — SFTP (Marketplace Files)
 
+**What is SFTP?**
+SFTP (SSH File Transfer Protocol) is a secure file transfer protocol built on top of SSH. Unlike FTP, all data is encrypted in transit. In real-world data pipelines, SFTP is commonly used by partners (e.g. e-commerce marketplaces, banks, logistics providers) to deliver daily batch export files — typically CSVs — to your ingestion layer. Your pipeline connects to the SFTP server, lists available files, downloads them, validates integrity (checksum), then processes the data.
+
 Daily sales export files from Lazada, Shopee, and TikTok. Each file covers one partner for one day. This is the **only source** for marketplace-channel revenue, platform commissions, and platform discounts.
 
 **Connection**:

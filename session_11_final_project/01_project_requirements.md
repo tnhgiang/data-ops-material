@@ -1,8 +1,6 @@
 # ShopVN Analytics Platform — Final Project Requirements
 
 **Course**: Master Class DataOps for Modern Data Platforms: From Pipeline to Production
-**Version**: 1.0
-**Audience**: DataOps Engineering Students
 
 ---
 
@@ -21,7 +19,7 @@ Currently, data is scattered across three isolated systems. No team has a comple
 
 ## 2. Business Requirements
 
-Each use case describes what a business team needs. Students implement the data pipeline that makes this possible. **How** to design the solution (DWH vs Lakehouse, SCD type, etc.) is the student's decision.
+Each use case describes what a business team needs. You should implement the data pipeline that makes this possible. **How** to design the solution (DWH vs Lakehouse, SCD type, etc.) is the your decision.
 
 ### UC1 — Finance: Revenue & Spending
 
@@ -121,7 +119,7 @@ The pipeline must ingest data from all three sources:
 
 ### 3.3 Data Loading
 
-- Load transformed data into a DWH or Lakehouse (student's choice of stack)
+- Load transformed data into a DWH or Lakehouse (your choice of stack)
 - All loads must be **idempotent**: running the same pipeline for the same date range multiple times must produce identical results — no duplication, no data loss
 
 ### 3.4 Orchestration
@@ -166,7 +164,7 @@ Source schemas may change without notice. The pipeline must handle:
 
 | Scenario | Requirement |
 |----------|-------------|
-| New column added to source | Pipeline must not crash. Student must document the strategy (ignore or propagate). |
+| New column added to source | Pipeline must not crash. You must document the strategy (ignore or propagate). |
 | Column type changed | Pipeline must detect type mismatch and not silently corrupt data |
 | New SFTP partner added | Pipeline must handle new partners without requiring a full rewrite |
 
@@ -194,7 +192,7 @@ After the pipeline runs, an on-call engineer must be able to answer the followin
 
 ### 4.6 Incident Response
 
-When the pipeline fails at 3 AM, the student must have a **runbook** to:
+When the pipeline fails at 3 AM, the you must have a **runbook** to:
 
 1. Identify which step failed (extract / transform / load / quality check)
 2. Assess the impact: which data is affected and for which date range
@@ -250,7 +248,7 @@ Large files (flash sale days up to 18 MB) must be **stream-read in chunks** — 
 
 ## 6. Architecture Options
 
-Students choose **one** of two stacks. The choice must be justified in the project presentation.
+You can choose **one** of two stacks. The choice must be justified in the project presentation.
 
 ### Option A — SQL Data Warehouse (DuckDB)
 
