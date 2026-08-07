@@ -37,6 +37,10 @@ Each use case describes what a business team needs. You should implement the dat
 > - "Did Shopee or Lazada contribute more revenue in June?"
 > - "Who are the top 10 customers by spend in June?"
 
+> **Sources**: PostgreSQL + SFTP
+> **Key tables**: `orders`, `order_items`, `vouchers`, `returns` + SFTP CSV files
+> **Design consideration**: Direct and marketplace revenue must be modeled separately before being combined — they have different schemas and different revenue rules. Refund deduction only applies to `returns` with `status = 'refunded'`.
+
 ---
 
 ### UC2 — Operations: Delivery Performance
@@ -56,6 +60,10 @@ Each use case describes what a business team needs. You should implement the dat
 > - "Which product category has the highest return rate?"
 
 > **Note**: Carrier, delivery time, delivery attempts, and failure reasons are **only available from the Logistics API** — not from the database. This use case requires joining PostgreSQL and API data.
+
+> **Sources**: PostgreSQL + API
+> **Key tables**: `orders` + API shipments (LEFT JOIN on `order_id`)
+> **Design consideration**: ~8% of orders will have no shipment record (cancelled before pickup) — your model must handle NULL carrier/delivery fields gracefully.
 
 ---
 
@@ -77,6 +85,10 @@ Each use case describes what a business team needs. You should implement the dat
 
 > **Note**: Loyalty tier history — the source system (`customers` table) only stores the **current** tier. Historical changes can only be captured from the day the pipeline goes live. Backfilling historical tier changes is not possible.
 
+> **Sources**: PostgreSQL only
+> **Key tables**: `customers`, `orders`, `order_items`, `vouchers`, `product_reviews`
+> **Design consideration**: `loyalty_tier` only stores current state — SCD Type 2 is needed to track historical tier changes, but history can only be captured from pipeline go-live date. Voucher effectiveness requires joining `vouchers` → `orders` → `order_items`.
+
 ---
 
 ### UC4 — Inventory & Product: Stock & Product Performance
@@ -96,6 +108,10 @@ Each use case describes what a business team needs. You should implement the dat
 > - "At the current sell-through rate, which products will run out of stock within 7 days?"
 
 > **Note**: The `inventory` table only stores current stock. End-of-day stock for past dates must be reconstructed from `inventory_transactions`. Direct vs marketplace comparison requires joining PostgreSQL and SFTP data at the product level.
+
+> **Sources**: PostgreSQL + SFTP
+> **Key tables**: `products`, `inventory`, `inventory_transactions`, `order_items` + SFTP CSV files
+> **Design consideration**: `inventory` must be snapshotted daily — the table only reflects current state. Marketplace vs direct comparison joins at `product_id` level only — there is no order-level join between PostgreSQL and SFTP.
 
 ---
 
@@ -120,12 +136,12 @@ The pipeline must ingest data from all three sources:
 ### 3.3 Data Loading
 
 - Load transformed data into a DWH or Lakehouse (your choice of stack)
-- All loads must be **idempotent**: running the same pipeline for the same date range multiple times must produce identical results — no duplication, no data loss
+- All loads must be **idempotent**: running the same pipeline for the same date range multiple times must produce identical results — no duplication, no data loss.
 
 ### 3.4 Orchestration
 
 - Pipeline must be orchestrated with **Apache Airflow**
-- DAGs must have: retry logic, SLA alerts, task dependencies, and catchup=False
+- DAGs must have: retry logic, SLA alerts, task dependencies, and catchup=False. Please configure the value with a valid reason.
 - Backfill for any historical date range must work safely
 
 ### 3.5 Data Quality
@@ -136,7 +152,7 @@ The pipeline must ingest data from all three sources:
 
 ### 3.6 Security
 
-- Customer PII (`phone`, `email`) must be **masked** before loading into the analytics layer
+- Customer PII (`phone`, `email`,..) must be **masked** before loading into the analytics layer or specify the permission for each role that could access the data.
 - All credentials (DB passwords, API keys, SFTP passwords) must be managed via environment variables or secret managers — never hardcoded in code
 - Source access is read-only — no writes to source systems
 
@@ -154,8 +170,8 @@ The pipeline must ingest data from all three sources:
 
 ### 4.2 Reliability & Idempotency
 
-- Rerunning the pipeline for the same date produces the same result
-- A mid-run failure followed by a full rerun must not corrupt already-loaded data
+- Rerunning the pipeline for the same date produces the same result (determinism)
+- A mid-run failure followed by a full rerun must not corrupt already-loaded data (atomicity)
 - Backfilling any date range in the past must produce correct results
 
 ### 4.3 Schema Evolution
@@ -185,9 +201,7 @@ The pipeline must handle large files via streaming (not loading entirely into me
 After the pipeline runs, an on-call engineer must be able to answer the following questions **using only dashboards and logs** — without SSH access to servers:
 
 - What time did the pipeline finish today?
-- How many records were loaded from each source?
-- Were any SFTP files rejected? Why?
-- How many API rate limit hits occurred? Were retries successful?
+- Is the entire system operating stably? Are there any components or services experiencing disruptions?
 - Does today's revenue match the source?
 
 ### 4.6 Incident Response
@@ -199,8 +213,6 @@ When the pipeline fails at 3 AM, the you must have a **runbook** to:
 3. Fix and rerun safely without duplicating data
 4. Confirm data correctness after rerun via reconciliation
 5. Document the root cause and prevention steps
-
-**Target MTTR (Mean Time To Recovery)**: < 2 hours
 
 ---
 
@@ -214,7 +226,7 @@ These issues exist intentionally in the source. The pipeline must handle all of 
 |-------|----------|------|------------------|-----|
 | `phone IS NULL` | `customers` | ~0.6% | Handle nullable, do not crash | Valid — some customers don't provide a phone. One NULL should not crash your entire pipeline. |
 | `shipping_fee = 0` (no freeship voucher) | `orders` | ~2% | Flag as anomaly, continue | Order is valid, just anomalous. Do not reject. Flag it so the analytics team can investigate. |
-| `discount_amount > subtotal` (flash sale bug) | `orders` | ~0.3% | Cap or flag, document decision | Loading as-is makes `total_amount` negative. Revenue cannot be negative. Cap discount at subtotal, or flag the row — either is acceptable, but **document your decision**. |
+| `discount_amount > subtotal` (flash sale bug) | `orders` | ~0.3% | Flag and exclude from revenue — do not treat as zero-revenue order | The source system already clamps `total_amount` to `0` for these rows — the value is never negative in the DB. However, `total_amount = 0` here is a bug, not a free order. Flag these rows and exclude them from revenue aggregations. **Document your decision**. |
 | `quantity = 0` (legacy edge case) | `order_items` | ~1% | Flag or filter, document decision | `total_price = unit_price × 0 = 0`. Contributes nothing to revenue but corrupts "units sold" metrics. Filter it out or exclude from quantity aggregations — **document your decision**. |
 | `cost_price > base_price` (data entry error) | `products` | 50 rows | Flag — product selling at a loss | Not a pipeline error — it's a business insight. Load normally but add an `is_loss_making` flag so Finance and Product teams can act on it. |
 
@@ -274,7 +286,7 @@ PostgreSQL / API / SFTP
 
 Suitable when: large data volume, need for time travel, ACID writes on partitioned data.
 
-Both options require the same orchestration, quality checks, monitoring, and security controls.
+Both options require the same **orchestration**, **Quality checks & Reconciliation**, **monitoring**, and **security controls**.
 
 ---
 
@@ -325,4 +337,4 @@ Not required but will strengthen the portfolio:
 
 ---
 
-*Questions? Reach out to your mentor before Session 10.*
+*Questions? Reach out to me :))*

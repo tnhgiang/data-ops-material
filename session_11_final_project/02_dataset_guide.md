@@ -1,7 +1,6 @@
 # ShopVN Dataset Guide
 
 **Course**: Master Class DataOps for Modern Data Platforms
-**Version**: 1.0
 
 This document covers everything you need to know about the ShopVN dataset: what data is available, how the schemas are structured, how the three sources relate to each other, and how to get the environment running on your local machine.
 
@@ -92,10 +91,6 @@ Stores all registered customers. PII fields are present in source — must be ma
 | `loyalty_tier` | VARCHAR | bronze / silver / gold / platinum |
 | `created_at` | TIMESTAMP | |
 
-**Row count**: ~50,000
-
-**Loyalty tier distribution**: bronze 60% · silver 25% · gold 12% · platinum 3%
-
 ---
 
 #### `products`
@@ -115,9 +110,6 @@ Product catalog for ShopVN's direct channel.
 | `weight_gram` | INT | |
 | `is_active` | BOOLEAN | ~2% inactive |
 | `created_at` | TIMESTAMP | |
-
-**Row count**: 2,000
-**Categories**: Điện thoại · Laptop · Thời trang · Gia dụng · Mỹ phẩm · Thực phẩm · Đồ chơi · Sách
 
 ---
 
@@ -141,10 +133,6 @@ Central fact table. One row per order from the direct channel.
 | `payment_status` | VARCHAR | pending / paid / failed / refunded |
 | `created_at` | TIMESTAMP | |
 
-**Row count**: ~210,000
-**Status distribution**: delivered 65% · shipping 15% · confirmed 10% · cancelled 8% · returned 2%
-**Payment method**: cod 40% · momo 25% · banking 20% · card 15%
-
 ---
 
 #### `order_items`
@@ -156,12 +144,10 @@ Line items for each order. One row per product per order.
 | `item_id` | SERIAL PK | |
 | `order_id` | VARCHAR FK → orders | |
 | `product_id` | INT FK → products | |
-| `quantity` | INT | **~1% = 0** (intentional — legacy edge case) |
+| `quantity` | INT | **~1% = 0** — item was cancelled at line-item level; old system set quantity to 0 instead of deleting the row |
 | `unit_price` | DECIMAL | price at time of order |
 | `discount_per_item` | DECIMAL | flash sale item-level discount |
 | `total_price` | DECIMAL | (unit_price − discount_per_item) × quantity |
-
-**Row count**: ~440,000
 
 ---
 
@@ -182,8 +168,6 @@ Discount codes used in orders.
 | `usage_count` | INT | |
 | `max_usage` | INT | |
 
-**Row count**: 200
-
 ---
 
 #### `inventory`
@@ -196,8 +180,6 @@ Current stock level per product. 1:1 with `products`.
 | `warehouse_id` | VARCHAR | |
 | `stock_qty` | INT | current quantity — reconstruct history from `inventory_transactions` |
 | `last_updated` | TIMESTAMP | |
-
-**Row count**: 2,000
 
 ---
 
@@ -214,8 +196,6 @@ Audit log of every stock movement. Use this to reconstruct end-of-day inventory 
 | `qty_change` | INT | negative = stock decrease |
 | `created_at` | TIMESTAMP | |
 
-**Row count**: ~427,000
-
 ---
 
 #### `returns`
@@ -230,8 +210,6 @@ Return requests for delivered orders.
 | `status` | VARCHAR | pending / approved / rejected / refunded |
 | `refund_amount` | DECIMAL | |
 | `created_at` | TIMESTAMP | |
-
-**Row count**: ~4,300
 
 ---
 
@@ -248,8 +226,6 @@ Customer reviews submitted after delivery.
 | `rating` | INT | 1–5 |
 | `comment` | TEXT | nullable — ~40% of reviews are rating-only |
 | `created_at` | TIMESTAMP | |
-
-**Row count**: ~41,000
 
 ---
 
@@ -379,66 +355,117 @@ def verify_checksum(csv_path: str, md5_path: str) -> bool:
 
 ## 6. Intentional Failures
 
-All failures listed below are **by design**.
+All failures listed below are **by design**. For the required handling of each failure, see `01_project_requirements.md` Section 5.
 
 ### 6.1 PostgreSQL — Data Quality Issues
 
-| Issue | Column | Rate | Your pipeline must | Why |
-|-------|--------|------|--------------------|-----|
-| NULL phone number | `customers.phone` | ~0.6% | Handle nullable, do not crash | Valid — some customers don't provide a phone number. Crash here means your entire pipeline stops for a minority edge case. |
-| Zero shipping fee | `orders.shipping_fee` | ~2% | Flag as anomaly, continue | No freeship voucher was applied, yet fee = 0. Order is valid — do not reject. Flag so analytics team can investigate. |
-| Discount > subtotal | `orders.discount_amount` | ~0.3% | Cap or flag, document decision | If loaded as-is, `total_amount = subtotal − discount` goes negative. Revenue cannot be negative. Choose: cap discount at subtotal, or flag row. Either is valid — **document your decision**. |
-| Zero quantity | `order_items.quantity` | ~1% | Flag or filter, document decision | `total_price = unit_price × 0 = 0`. Row contributes nothing to revenue but would corrupt "units sold" metrics. Choose: filter it out, or keep and exclude from quantity aggregations. **Document your decision**. |
-| Cost > base price | `products.cost_price` | 50 rows | Flag as loss-making product | Not a pipeline error — a business insight. These products are being sold at a loss. Load normally, but add a `is_loss_making` flag so Finance/Product teams can act on it. |
+| Issue | Column | Rate | Notes |
+|-------|--------|------|-------|
+| NULL phone number | `customers.phone` | ~0.6% | Optional field — some customers registered without providing a phone number. Valid data, not a bug. |
+| Zero shipping fee | `orders.shipping_fee` | ~2% | Freeship should have been applied via voucher but wasn't — missing business rule enforcement in source system. |
+| Discount > subtotal | `orders.discount_amount` | ~0.3% | Flash sale bug — discount calculation in source system did not cap at subtotal, resulting in negative `total_amount`. |
+| Zero quantity | `order_items.quantity` | ~1% | Legacy system behaviour — cancelled line items were zeroed out instead of deleted. |
+| Cost > base price | `products.cost_price` | 50 rows | Data entry error — cost price was entered incorrectly. Product is being sold at a loss. |
 
 ### 6.2 REST API — Injected Failures
 
-| Failure | Rate | Your pipeline must |
-|---------|------|--------------------|
-| Rate limit (HTTP 429) | >100 req/min | Wait `retry_after` seconds, retry |
-| Timeout (35s sleep) | 5% of requests | Retry 3× with backoff: 1s → 2s → 4s |
-| Not found (HTTP 404) | ~8% of order IDs | Skip and log — deterministic per order_id |
-| Server error (HTTP 500) | 1% | Retry once, then skip |
-| Batch too large (HTTP 400) | >50 IDs | Fix your chunking (client bug) |
-
-> The 404 injection is **deterministic** — the same `order_id` always returns the same result. This makes failures reproducible for debugging.
+| Failure | Rate | Notes |
+|---------|------|-------|
+| Rate limit (HTTP 429) | >100 req/min | API enforces a 100 req/min cap to protect carrier backend systems. Response includes a `retry_after` field. |
+| Timeout (35s sleep) | 5% of requests | Carrier API occasionally hangs on slow tracking lookups. Failure is non-deterministic — same request may succeed on retry. |
+| Not found (HTTP 404) | ~8% of order IDs — deterministic per `order_id` | Order was cancelled before shipment was created, so no tracking record exists. Same `order_id` always returns 404. |
+| Server error (HTTP 500) | 1% | Random transient failure — simulates carrier API instability. Not related to the request content. |
+| Batch too large (HTTP 400) | >50 IDs | Client-side bug — pipeline is sending more IDs than the API allows per request. |
 
 ### 6.3 SFTP — File Failures
 
-| Failure | Count | Your pipeline must |
-|---------|-------|--------------------|
-| Missing file | 3 days × 1 partner | Detect on listing, log warning, continue |
-| Corrupt file | 2 days × 1 partner | Checksum fails → reject + alert |
-| Late arrival | 2 days × 1 partner | ⚠️ See note below |
+| Failure | Count | Notes |
+|---------|-------|-------|
+| Missing file | 3 days × 1 partner | Partner did not upload the export file for that day — could be a partner-side generation failure or upload error. |
+| Corrupt file | 2 days × 1 partner | File was partially uploaded or corrupted in transit. MD5 checksum will not match the companion `.md5` file. |
+| Late arrival | 2 days × 1 partner | Partner uploaded the file after the pipeline's scheduled run time — conceptual only, see `01_project_requirements.md` Section 5.3. |
 
-> **Note on Late Arrival**: All SFTP files in this environment are pre-generated and available immediately when the container starts — there is no actual delay. The `LATE` entries in `FAILURE_MANIFEST.txt` are **conceptual markers** that represent a real-world scenario your pipeline code must be designed to handle, but you cannot test it live with this setup. To test late arrival handling, manually rename or remove a file from the SFTP directory, then copy it back later to simulate the file arriving after your pipeline's initial run.
+**FAILURE_MANIFEST.txt** is a reference file pre-baked into the SFTP server at `/marketplace/incoming/FAILURE_MANIFEST.txt`. It lists exactly which days and partners have injected failures, so you know what to expect when testing your pipeline:
 
-Check `/marketplace/incoming/FAILURE_MANIFEST.txt` for the exact days and partners.
+```
+2026-06-04  tiktok    MISSING
+2026-06-11  tiktok    MISSING
+2026-06-17  lazada    MISSING
+2026-06-09  tiktok    CORRUPT
+2026-06-23  tiktok    CORRUPT
+2026-06-18  tiktok    LATE
+2026-06-24  tiktok    LATE
+```
+
+Use this file to:
+- Verify your pipeline correctly detects and handles each failure type
+- Reference exact dates when writing your runbook scenarios
+- Confirm your pipeline logs the right warning/alert for each case
+
+Download it with:
+```bash
+sftp -P 2222 marketplace_reader@localhost
+sftp> get /marketplace/incoming/FAILURE_MANIFEST.txt .
+sftp> exit
+```
 
 ---
 
-## 7. Data Volume Summary
+## 7. Setup & Installation
 
-| Table / Source | Rows | Notes |
-|----------------|------|-------|
-| `customers` | 50,000 | ~290 with NULL phone |
-| `products` | 2,000 | 50 with cost > base |
-| `inventory` | 2,000 | current state only |
-| `vouchers` | 200 | 6 campaigns |
-| `orders` | ~210,000 | 30 days, direct channel only |
-| `order_items` | ~440,000 | |
-| `returns` | ~4,300 | ~2% of delivered orders |
-| `product_reviews` | ~41,000 | ~30% of delivered orders |
-| `inventory_transactions` | ~427,000 | full audit log |
-| API shipments | ~192,000 | ~92% of non-cancelled orders |
-| SFTP CSV files | 87 files | 90 − 3 missing = 87 |
-| SFTP total rows | ~200,000 | marketplace orders, 30 days × 3 partners |
+### 7.1 About This Docker Compose
 
----
+The `docker-compose.yml` in this folder starts **only the three data source containers** — PostgreSQL, the Logistics API, and the SFTP server. It does **not** include your pipeline stack (Airflow, DWH, etc.).
 
-## 8. Setup & Installation
+You will create a **separate `docker-compose.yml`** for your pipeline (Airflow, DWH, etc.).
 
-### 8.1 Prerequisites
+When the datasource `docker-compose.yml` starts, Docker automatically creates a network called `shopvn-net` and places the three source containers on it. Your pipeline containers need to join this same network to reach those sources.
+
+Here is a minimal example of an Airflow pipeline `docker-compose.yml` that connects to the ShopVN sources:
+
+```yaml
+# pipeline/docker-compose.yml
+networks:
+  shopvn-net:
+    external: true  # this network was created by the datasource compose — reuse it
+
+services:
+  airflow:
+    image: apache/airflow:2.9.3
+    networks:
+      - shopvn-net  # join the same network as postgres, api, sftp
+    environment:
+      # Connect to ShopVN PostgreSQL using the service name "postgres", not localhost
+      SHOPVN_DB_HOST: postgres
+      SHOPVN_DB_PORT: 5432
+      SHOPVN_DB_USER: shopvn_reader
+      SHOPVN_DB_PASSWORD: readonly123
+      SHOPVN_DB_NAME: shopvn
+
+      # Logistics API — use service name "api"
+      LOGISTICS_API_URL: http://api:8000
+      LOGISTICS_API_KEY: shopvn-logistics-key-2026
+
+      # SFTP — use service name "sftp"
+      SFTP_HOST: sftp
+      SFTP_PORT: 22
+      SFTP_USER: marketplace_reader
+      SFTP_PASSWORD: sftp_readonly_2026
+    volumes:
+      - ./dags:/opt/airflow/dags
+```
+
+Inside the Airflow container, the three sources are reachable at:
+
+| Source | Address inside container |
+|--------|--------------------------|
+| PostgreSQL | `postgres:5432` |
+| Logistics API | `http://api:8000` |
+| SFTP | `sftp:22` |
+
+> The ports `5434`, `8000`, `2222` are **host-side** port mappings — they only work when connecting from your laptop directly. Inside any Docker container, always use the service names and their internal ports above.
+
+### 7.2 Prerequisites
 
 | Tool | Version |
 |------|---------|
@@ -447,13 +474,10 @@ Check `/marketplace/incoming/FAILURE_MANIFEST.txt` for the exact days and partne
 | RAM available for Docker | ≥ 4 GB |
 | Free disk space | ≥ 3 GB |
 
-### 8.2 Start the Environment
+### 7.3 Start the Data Sources
 
 ```bash
-# Clone or copy the shopvn-datasource directory
-cd shopvn-datasource
-
-# Pull pre-built images from Docker Hub and start all services
+# From the session_11_final_project directory
 docker compose up -d
 
 # Check that all three containers are running
@@ -470,7 +494,7 @@ masterclass-dataops-sftp       Up               0.0.0.0:2222->22/tcp
 
 > PostgreSQL restores ~200,000 rows from a pre-built dump on first start. This takes about **60 seconds**. The container will show `(healthy)` once it is ready.
 
-### 8.3 Verify Each Source
+### 7.4 Verify Each Source
 
 ```bash
 # PostgreSQL — total order count
@@ -504,7 +528,7 @@ cat FAILURE_MANIFEST.txt
 # Shows exactly which days/partners have failures
 ```
 
-### 8.4 Stop and Reset
+### 7.5 Stop and Reset
 
 ```bash
 # Stop services (keep data)
@@ -518,7 +542,7 @@ docker compose down && docker compose up -d
 # Note: PostgreSQL will re-initialize from dump (~60 seconds)
 ```
 
-### 8.5 Docker Images
+### 7.6 Docker Images
 
 All images are published on Docker Hub under `anhnguyen1611/`:
 
@@ -530,7 +554,7 @@ All images are published on Docker Hub under `anhnguyen1611/`:
 
 ---
 
-## 9. What Only Lives in Each Source
+## 8. What Only Lives in Each Source
 
 This is a critical point for pipeline design. Use the right source for the right question.
 
@@ -553,33 +577,49 @@ This is a critical point for pipeline design. Use the right source for the right
 
 ---
 
-## 10. Key Business Rules
+## 9. Key Business Rules
 
-### Revenue Calculation
+### Direct Channel Revenue
+
+`total_amount` is pre-calculated by the source system and stored in the `orders` table. When `discount_amount > subtotal`, the source system clamps `total_amount` to `0` instead of allowing a negative value.
+
+### Marketplace Net Revenue
+
+`net_revenue` is pre-calculated and stored in each SFTP CSV row. The formula used by the source system is:
 
 ```
-Direct channel order:
-  total_amount = subtotal + shipping_fee − discount_amount
+net_revenue = floor(sale_price × quantity_sold × (1 − commission_rate))
+```
 
-Marketplace net revenue (per row in SFTP):
-  net_revenue = sale_price × quantity_sold × (1 − commission_rate)
+### Return / Refund Impact on Revenue
+
+Only returns with `status = 'refunded'` are deducted from revenue — money has actually been returned to the customer at this point. `approved` returns are not counted until funds are disbursed.
+
+```
+net_revenue_after_return = total_amount - SUM(refund_amount WHERE status = 'refunded')
 ```
 
 ### Settlement Lag
 
 Marketplace platforms pay on a T+15 cycle:
+
 ```
 settlement_date = order_date + 15 days
 ```
 
-Revenue is **earned** on `order_date` but **received** on `settlement_date`. Your data model must account for this distinction when answering Finance team questions.
+Revenue is **earned** on `order_date` but **received** on `settlement_date`. Your data model must store **both columns** so Finance can query either view:
+
+- Revenue earned in June → filter by `order_date`
+- Cash actually received in June → filter by `settlement_date`
+
+These two numbers will differ — both are valid depending on the reporting purpose.
 
 ### Inventory Reconstruction
 
-The `inventory` table only stores the **current** stock level. To get end-of-day stock for a past date, reconstruct it from `inventory_transactions`:
+The `inventory` table only stores the **current** stock level — it always reflects today's state, not history. To get end-of-day stock for a past date, reconstruct it from `inventory_transactions`:
 
 ```sql
--- Stock at end of 2026-06-15 for a given product
+-- This is how to get Stock at end of 2026-06-15 for a given product
 SELECT
   stock_qty
   - COALESCE(SUM(qty_change) FILTER (WHERE created_at > '2026-06-15 23:59:59'), 0)
@@ -590,6 +630,43 @@ WHERE product_id = 123
 GROUP BY stock_qty;
 ```
 
+Your pipeline must run this reconstruction **daily** and write the result as a snapshot into your DWH — you cannot query `inventory` directly for historical data. The analytics table should look like:
+
+| snapshot_date | product_id | stock_qty |
+|---------------|-----------|-----------|
+| 2026-06-14 | 1 | 2,850 |
+| 2026-06-15 | 1 | 2,711 |
+| 2026-06-16 | 1 | 2,540 |
+
+### Sell-Through Rate
+
+```
+avg_daily_units_sold = SUM(quantity_sold over last 7 days) / 7
+days_to_stockout     = current_stock / avg_daily_units_sold
+```
+
+> If the 7-day window includes a flash sale day (Jun 7 or Jun 15), `avg_daily_units_sold` will be inflated ~3×, causing `days_to_stockout` to be underestimated.
+
 ### Loyalty Tier History
 
 The `customers` table only stores the **current** loyalty tier. Historical changes cannot be backfilled. SCD Type 2 tracking of tier changes is only possible from the day your pipeline starts running.
+
+---
+
+## 10. Design Decisions & Rationale
+
+Every non-trivial decision in your pipeline must be accompanied by a short explanation of **why** — not just what. This applies to:
+
+- Data quality handling (e.g. "cap discount at subtotal because negative revenue corrupts Finance reports")
+- Load strategy (e.g. "MERGE instead of truncate+insert because we need idempotency without losing in-flight records")
+- Retry policy (e.g. "exponential backoff starting at 1s because the API `retry_after` header is unreliable under load")
+- SCD type chosen (e.g. "SCD Type 2 for loyalty tier because Marketing needs to segment customers by their tier *at time of purchase*")
+- DQ thresholds (e.g. "alert if row count drops >10% day-over-day — flash sale days excluded from baseline")
+
+Document these decisions inline in your code (comments), in your DAG, or in a `decisions.md` file in your repository. A pipeline that works but cannot be reasoned about by the next engineer is incomplete.
+
+---
+
+## 11. Getting Started
+
+For project structure, refer to the pipeline repositories from previous sessions as a starting point. You are free to adapt the layout to fit your chosen stack.
