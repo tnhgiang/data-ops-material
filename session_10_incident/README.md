@@ -108,6 +108,7 @@ docker exec session_10_incident-airflow-worker-1 spark-submit \
   --master spark://spark-master:7077 \
   --conf spark.driver.host=airflow-worker \
   --conf spark.driver.bindAddress=0.0.0.0 \
+  --conf "spark.extraListeners=" \
   --py-files /opt/airflow/plugins/dataops_common/lakehouse_common.py \
   /opt/airflow/jobs/init_schema.py
 ```
@@ -121,7 +122,35 @@ INFO init_schema.py:37 Registered gold.fact_daily_revenue
 
 **5. Run a clean baseline**
 
-Trigger the DAG in Airflow UI (http://localhost:8888) for `2026-06-12T00:00:00+00:00` and `2026-06-13T00:00:00+00:00` (execution dates; `data_interval_end` maps to 2026-06-13 and 2026-06-14 respectively). All six tasks should turn green for each run.
+Trigger the DAG in Airflow UI (http://localhost:8888) for execution dates `2026-06-13T00:00:00+00:00` and `2026-06-14T00:00:00+00:00`. For a `@daily` DAG, execution date = `data_interval_end`, so these runs process `2026-06-13.csv` and `2026-06-14.csv` respectively. All six tasks should turn green for each run.
+
+Verify via Trino:
+
+```sql
+-- Row counts per layer per date
+SELECT order_date, count(*) AS rows FROM delta.silver.orders GROUP BY 1 ORDER BY 1;
+SELECT order_date, partner, order_count, total_revenue FROM delta.gold.fact_daily_revenue ORDER BY 1, 2;
+```
+
+Expected: two dates (`2026-06-13`, `2026-06-14`), `total_revenue > 0` for all rows.
+
+## Querying from Trino (or DBeaver) on your host
+
+Trino is the interactive query engine over the Delta tables. Connect **DBeaver** on your host
+to `localhost:8090` (catalog `delta`, schemas `bronze` / `silver` / `gold`), or use the CLI:
+
+```bash
+# Row counts per layer
+docker exec session_10_incident-trino-1 trino --server http://localhost:8080 --user admin --execute \
+  "SELECT order_date, count(*) AS rows FROM delta.silver.orders GROUP BY 1 ORDER BY 1"
+
+# Daily revenue summary
+docker exec session_10_incident-trino-1 trino --server http://localhost:8080 --user admin --execute \
+  "SELECT order_date, partner, order_count, total_revenue FROM delta.gold.fact_daily_revenue ORDER BY 1, 2"
+```
+
+> **Read-after-write.** `conf/trino/catalog/delta.properties` sets `delta.metadata.cache-ttl=0s`
+> so Trino sees Spark's latest commit immediately without stale metadata.
 
 ## Demo Walkthrough
 
@@ -135,9 +164,25 @@ Renames `amount` → `revenue` in `bronze/orders/2026-06-15.csv` on MinIO.
 
 **Step 2 — Trigger the incident run**
 
-Trigger the DAG for execution date `2026-06-14T00:00:00+00:00` in Airflow UI.
+Trigger the DAG for execution date `2026-06-15T00:00:00+00:00` in Airflow UI (`data_interval_end = 2026-06-15` → reads the tampered `2026-06-15.csv`).
 
 Watch `raw2bronze__marketplace_orders`, `bronze2silver__orders`, and `silver2gold__fact_daily_revenue` go green — then `reconcile__revenue__fact_daily_revenue` fails. The task log shows the Trino query returned `False`: revenue summed to zero.
+
+Confirm the silent failure via Trino:
+
+```sql
+-- gold shows total_revenue = 0 for 2026-06-15
+SELECT order_date, partner, order_count, total_revenue
+FROM delta.gold.fact_daily_revenue
+WHERE order_date = DATE '2026-06-15'
+ORDER BY partner;
+
+-- bronze shows amount = NULL for 2026-06-15 (column was renamed upstream)
+SELECT order_date, count(*) AS rows, count(amount) AS with_amount, count(revenue) AS with_revenue
+FROM delta.bronze.marketplace_orders
+WHERE order_date = DATE '2026-06-15'
+GROUP BY 1;
+```
 
 **Step 3 — Trace in Marquez**
 
@@ -151,10 +196,21 @@ python scripts/inject_incident.py --restore
 
 # Clear and rerun the failed date
 docker exec session_10_incident-airflow-worker-1 \
-  airflow tasks clear session_10_order_pipeline -s 2026-06-14 -e 2026-06-15 -y
+  airflow tasks clear session_10_order_pipeline -s 2026-06-15 -e 2026-06-16 -y
 ```
 
 All tasks should turn green and all three reconciliation checks should pass.
+
+Confirm via Trino:
+
+```sql
+SELECT order_date, partner, order_count, total_revenue
+FROM delta.gold.fact_daily_revenue
+WHERE order_date = DATE '2026-06-15'
+ORDER BY partner;
+```
+
+Expected: `total_revenue > 0` for all rows.
 
 ## Common Errors
 
@@ -165,7 +221,7 @@ All tasks should turn green and all three reconciliation checks should pass.
 | `PATH_NOT_FOUND: s3a://bronze/orders/<date>.csv` | Wrong execution date used to trigger; CSV for that date does not exist | Trigger with an execution date whose `data_interval_end` matches an uploaded CSV (see Step 5 above) |
 | `total_revenue = 0` — all three Spark tasks green | Expected — this is the incident. The `reconcile__revenue__fact_daily_revenue` check catches it | Follow Step 3: trace in Marquez |
 | `ClassNotFoundException: DeltaSparkSessionExtension` | `spark.jars` in `spark-defaults.conf` points to missing JAR | Confirm `jars/` is populated and the volume mount in `docker-compose.yml` is correct |
-| Marquez graph empty after DAG runs | OpenLineage Spark listener jar missing from `$SPARK_HOME/jars/` | Check Dockerfile `RUN wget … openlineage-spark_2.12-1.9.1.jar` ran successfully: `docker exec session_10_incident-airflow-worker-1 ls $SPARK_HOME/jars/ \| grep openlineage` |
+| Marquez graph empty after DAG runs | OpenLineage Spark listener jar missing from `$SPARK_HOME/jars/` | Check Dockerfile `RUN wget … openlineage-spark_2.12-1.22.0.jar` ran successfully: `docker exec session_10_incident-airflow-worker-1 ls $SPARK_HOME/jars/ \| grep openlineage` |
 | `duckdb` errors | Session 10 uses Delta Lake + Trino, not DuckDB | Ensure you are in `session_10_incident/` and not mixing with another session's stack |
 
 ## Shutdown

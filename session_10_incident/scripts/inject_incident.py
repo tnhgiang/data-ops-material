@@ -51,4 +51,6 @@ if args.restore:
     log.info("Incident restored. Rerun the DAG for %s.", INCIDENT_DATE)
 else:
     _rewrite_header("amount", "revenue")
-    log.info("Incident injected. Trigger the DAG for %s to reproduce.", INCIDENT_DATE)
+    log.info(
+        "Incident injected. Trigger the DAG with execution date %sT00:00:00+00:00.", INCIDENT_DATE
+    )

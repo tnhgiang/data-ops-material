@@ -8,16 +8,18 @@
 
 ## Trace in Marquez
 
-1. Open `http://localhost:3000`
-2. Select namespace **s3a://gold** → dataset **fact_daily_revenue**
-3. Click the latest run → confirm **Output Fields**: `total_revenue`, `order_count`, `partner`, `order_date` are all present but values are suspect
-4. Click the **upstream edge** to **s3a://silver / orders**
-   - Confirm fields: `order_id`, `partner`, `amount`, `order_date`, `status`, `customer_email_masked`
-   - `amount` is present in schema — the column exists but its values are **null** (`bronze2silver__orders` selected `amount` from bronze, but the source CSV no longer had it)
-5. Click further upstream to **s3a://bronze / marketplace_orders**
-   - Inspect the **Schema** tab: you will see **both `amount` and `revenue` columns**
-   - Delta Lake merged schemas across runs; the `revenue` column appeared on the incident date
-   - **Root cause confirmed**: upstream renamed `amount` → `revenue`. Bronze write succeeded (schema merged), silver read `amount` (null), gold summed nulls to 0.
+Marquez registers datasets in two separate namespaces: `s3a://` (Airflow provider) and `s3://` (Spark listener). The schema change signal lives in the Spark-registered datasets under the `s3://` namespaces.
+
+1. Open `http://localhost:3000` → click **Datasets** icon (left sidebar)
+2. Select namespace **s3://gold** → click **fact_daily_revenue** row → **VIEW**
+   - Graph shows: `/orders` → JOB `silver2gold___fac...` → **`fact_daily_revenue`** (focused)
+   - `/orders` node field list shows `amount` — the column exists but carried null values from silver
+3. Switch namespace to **s3://silver** → click **orders** → **VIEW**
+   - Graph shows the silver `orders` dataset and what produced it
+4. Switch namespace to **s3://bronze** → click **marketplace_orders** → **VIEW**
+   - **The field list on the node shows `revenue` instead of `amount`** — this is the signal
+   - OpenLineage (Spark listener) recorded the bronze job's output schema at the incident run: `amount` was replaced by `revenue` in the source CSV
+   - **Root cause confirmed**: upstream renamed `amount` → `revenue`. Bronze accepted the renamed column, silver still selected `amount` (now null), gold summed nulls to 0.
 
 ## Fix
 
