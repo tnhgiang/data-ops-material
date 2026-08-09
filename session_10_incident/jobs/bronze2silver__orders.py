@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 
 from lakehouse_common import build_spark, get_logger
 from pyspark.sql import Window
 from pyspark.sql.functions import col, lit, row_number, sha2
 
-log = get_logger("silver_transform")
+log = get_logger("bronze2silver__orders")
 
 VALID_STATUSES = {"completed", "refunded", "pending"}
 
@@ -15,7 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--ds", required=True)
 ds = parser.parse_args().ds
 
-spark = build_spark("orders-silver-transform")
+spark = build_spark("bronze2silver__orders")
 
 df = (
     spark.read.format("delta")
@@ -39,8 +38,6 @@ if "customer_email" in df.columns:
         "customer_email"
     )
 
-# `amount` comes from bronze — if upstream renamed it the column will be null here,
-# which is exactly the incident we trace through Marquez lineage
 df = df.select(
     col("order_id"),
     col("partner"),

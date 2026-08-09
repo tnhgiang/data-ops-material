@@ -1,30 +1,17 @@
 from __future__ import annotations
 
-import logging
-import os
 from datetime import datetime, timedelta
 
-import trino
-from airflow.decorators import dag, task
+from airflow.decorators import dag
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from airflow.providers.common.sql.operators.sql import SQLCheckOperator
 from dataops_common.notifications import notify_on_failure
 
-log = logging.getLogger(__name__)
-
-JARS = (
-    "/opt/jars/delta-spark_2.12-3.2.0.jar"
-    ",/opt/jars/delta-storage-3.2.0.jar"
-    ",/opt/jars/hadoop-aws-3.3.4.jar"
-    ",/opt/jars/aws-java-sdk-bundle-1.12.262.jar"
-)
 PY_FILES = "/opt/airflow/plugins/dataops_common/lakehouse_common.py"
 SPARK_CONF = {
     "spark.driver.host": "airflow-worker",
     "spark.driver.bindAddress": "0.0.0.0",
 }
-
-TRINO_HOST = os.environ.get("TRINO_HOST", "trino")
-TRINO_PORT = int(os.environ.get("TRINO_PORT", "8080"))
 
 
 @dag(
@@ -42,84 +29,62 @@ TRINO_PORT = int(os.environ.get("TRINO_PORT", "8080"))
     tags=["session-10", "lakehouse", "spark", "delta", "orders"],
 )
 def session_10_order_pipeline():
-    bronze_load = SparkSubmitOperator(
-        task_id="bronze_load",
-        application="/opt/airflow/jobs/bronze_load.py",
+    raw2bronze__marketplace_orders = SparkSubmitOperator(
+        task_id="raw2bronze__marketplace_orders",
+        application="/opt/airflow/jobs/raw2bronze__marketplace_orders.py",
         conn_id="spark_default",
         application_args=["--ds", "{{ data_interval_end | ds }}"],
-        jars=JARS,
         py_files=PY_FILES,
         conf=SPARK_CONF,
         verbose=False,
     )
 
-    silver_transform = SparkSubmitOperator(
-        task_id="silver_transform",
-        application="/opt/airflow/jobs/silver_transform.py",
+    bronze2silver__orders = SparkSubmitOperator(
+        task_id="bronze2silver__orders",
+        application="/opt/airflow/jobs/bronze2silver__orders.py",
         conn_id="spark_default",
         application_args=["--ds", "{{ data_interval_end | ds }}"],
-        jars=JARS,
         py_files=PY_FILES,
         conf=SPARK_CONF,
         verbose=False,
     )
 
-    gold_aggregate = SparkSubmitOperator(
-        task_id="gold_aggregate",
-        application="/opt/airflow/jobs/gold_aggregate.py",
+    silver2gold__fact_daily_revenue = SparkSubmitOperator(
+        task_id="silver2gold__fact_daily_revenue",
+        application="/opt/airflow/jobs/silver2gold__fact_daily_revenue.py",
         conn_id="spark_default",
         application_args=["--ds", "{{ data_interval_end | ds }}"],
-        jars=JARS,
         py_files=PY_FILES,
         conf=SPARK_CONF,
         verbose=False,
     )
 
-    @task(task_id="reconciliation")
-    def reconciliation(data_interval_end=None):
-        run_date = data_interval_end.strftime("%Y-%m-%d")
-        conn = trino.dbapi.connect(
-            host=TRINO_HOST, port=TRINO_PORT, user="airflow", catalog="delta"
-        )
-        cur = conn.cursor()
+    reconcile__not_empty__orders = SQLCheckOperator(
+        task_id="reconcile__not_empty__orders",
+        conn_id="trino_default",
+        sql="sql/session_10_order_pipeline/reconcile__not_empty__orders.sql",
+    )
 
-        cur.execute(
-            f"SELECT count(*) FROM delta.silver.orders WHERE order_date = DATE '{run_date}'"
-        )
-        silver_rows = cur.fetchone()[0]
+    reconcile__revenue__fact_daily_revenue = SQLCheckOperator(
+        task_id="reconcile__revenue__fact_daily_revenue",
+        conn_id="trino_default",
+        sql="sql/session_10_order_pipeline/reconcile__revenue__fact_daily_revenue.sql",
+    )
 
-        cur.execute(
-            f"SELECT coalesce(sum(total_revenue), 0) FROM delta.gold.fact_daily_revenue WHERE order_date = DATE '{run_date}'"
-        )
-        total_revenue = float(cur.fetchone()[0])
+    reconcile__row_count__fact_daily_revenue = SQLCheckOperator(
+        task_id="reconcile__row_count__fact_daily_revenue",
+        conn_id="trino_default",
+        sql="sql/session_10_order_pipeline/reconcile__row_count__fact_daily_revenue.sql",
+    )
 
-        cur.execute(
-            f"SELECT coalesce(sum(order_count), 0) FROM delta.gold.fact_daily_revenue WHERE order_date = DATE '{run_date}'"
-        )
-        gold_order_count = int(cur.fetchone()[0])
-
-        log.info(
-            "Reconcile %s: silver_rows=%d gold_order_count=%d total_revenue=%.2f",
-            run_date, silver_rows, gold_order_count, total_revenue,
-        )
-
-        if silver_rows == 0:
-            raise ValueError(f"silver.orders is empty for {run_date}")
-
-        if silver_rows != gold_order_count:
-            raise ValueError(
-                f"Row count mismatch for {run_date}: silver={silver_rows} gold={gold_order_count}"
-            )
-
-        if total_revenue <= 0:
-            raise ValueError(
-                f"total_revenue is {total_revenue} for {run_date} — expected > 0. "
-                "Check silver_transform: 'amount' column may be null due to upstream schema change."
-            )
-
-        log.info("Reconcile passed for %s", run_date)
-
-    bronze_load >> silver_transform >> gold_aggregate >> reconciliation()
+    (
+        raw2bronze__marketplace_orders
+        >> bronze2silver__orders
+        >> silver2gold__fact_daily_revenue
+        >> reconcile__not_empty__orders
+        >> reconcile__revenue__fact_daily_revenue
+        >> reconcile__row_count__fact_daily_revenue
+    )
 
 
 session_10_order_pipeline()

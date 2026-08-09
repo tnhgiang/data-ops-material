@@ -1,9 +1,3 @@
-"""Inject or restore the schema-change incident for the 2026-06-15 order file.
-
-Usage:
-    python inject_incident.py           # inject: rename 'amount' -> 'revenue'
-    python inject_incident.py --restore # restore original column name
-"""
 from __future__ import annotations
 
 import argparse
@@ -46,7 +40,9 @@ def _rewrite_header(old_name: str, new_name: str) -> None:
     csv.writer(buf).writerows(rows)
     data = buf.getvalue().encode()
 
-    client.put_object("bronze", OBJECT_KEY, io.BytesIO(data), length=len(data), content_type="text/csv")
+    client.put_object(
+        "bronze", OBJECT_KEY, io.BytesIO(data), length=len(data), content_type="text/csv"
+    )
     log.info("Rewrote bronze/%s: '%s' -> '%s'", OBJECT_KEY, old_name, new_name)
 
 

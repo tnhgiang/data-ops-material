@@ -1,140 +1,175 @@
 # Session 10 — Incident RCA: Tracing a Silent Data Bug with Marquez
 
-## What You Will Learn
+Reproduce a real-world silent data failure — a schema change that passes every row-count check — then trace the root cause end-to-end using OpenLineage and Marquez.
 
-- How to use Marquez to trace a data lineage graph from symptom to root cause
-- Why row-count reconciliation alone does not catch all data quality failures
-- How to write a runbook that references lineage nodes — not just Airflow tasks
+## Two Ways to Track Lineage
+
+Lineage is not just a tool feature — it is the ability to answer: **"where did this data come from, and what transformed it?"**
+
+There are two complementary approaches:
+
+**1. Tool-based lineage** — use OpenLineage + Marquez to automatically record every dataset read and write at runtime. You get a live graph of how data flows across jobs, what schema each dataset had at each run, and exactly which job introduced a change. This is what we build in this session.
+
+**2. Convention-based lineage** — embed lineage directly into your source code through naming discipline. A job named `bronze2silver__orders.py` tells you the source layer, the target layer, and the table — without opening the file. A SQL file named `reconcile__revenue__fact_daily_revenue.sql` tells you what it checks and on which table. When every file, task, and query follows this convention, your repository itself becomes a lineage document that any engineer can read.
+
+Both approaches answer the same question. Tool-based lineage answers it at runtime; convention-based lineage answers it at design time. In a mature DataOps team you use both — the tool catches what the code cannot express, and the code makes the tool's graph easier to interpret.
+
+This session demonstrates the combination: the incident is caught by Marquez, and the fix path is obvious because the codebase already tells you where each layer lives.
 
 ## The Incident
 
-An upstream partner renames the `amount` column to `revenue` in their daily order CSV
-without notice. The pipeline runs end-to-end with no task failures. Row counts are normal.
-The only signal is `total_revenue = 0` in the gold table — caught by the reconciliation check.
+An upstream partner renames `amount` → `revenue` in their daily order CSV without notice.
+The pipeline runs end-to-end: no task failures, normal row counts throughout.
+The only signal is `total_revenue = 0` in the gold table, caught by a value-level reconciliation check.
 
-Without Marquez, you would manually inspect each job's output to find where `amount`
-turned null. With Marquez, you open the lineage graph, trace from `gold.fact_daily_revenue`
-upstream, and find the schema break in under two minutes.
+Open Marquez, trace `gold.fact_daily_revenue` upstream — the schema divergence is visible in under two minutes.
 
-## Services
+## Stack
 
-| Service       | URL                        |
-|---------------|----------------------------|
-| Airflow UI    | http://localhost:8888       |
-| Marquez UI    | http://localhost:3000       |
-| Marquez API   | http://localhost:5050       |
-| Spark UI      | http://localhost:8080       |
-| MinIO Console | http://localhost:9001       |
+| Tool | Role |
+|---|---|
+| Airflow 2.9 (CeleryExecutor) | Orchestrate bronze → silver → gold pipeline + reconciliation checks |
+| Apache Spark 3.5 + Delta Lake | Process CSV into medallion Delta tables |
+| OpenLineage (Spark listener + Airflow provider) | Emit lineage events automatically on every job run |
+| Marquez 0.49 | Collect lineage events, visualise the dataset graph, surface schema changes |
+| Trino 445 | Query Delta tables for reconciliation checks |
+| Hive Metastore | Delta table registry shared by Spark and Trino |
+| MinIO | S3-compatible object store for bronze / silver / gold buckets |
 
-## Setup
+## Service URLs
 
-### 1. Copy JARs from session_05
+| Service | URL | Credentials |
+|---|---|---|
+| Airflow UI | http://localhost:8888 | airflow / airflow |
+| Marquez UI | http://localhost:3000 | — |
+| Marquez API | http://localhost:5050 | — |
+| Spark UI | http://localhost:8080 | — |
+| Trino UI | http://localhost:8090 | — |
+| MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
+
+## Structure
+
+```
+session_10_incident/
+├── dags/
+│   ├── session_10_order_pipeline.py   # DAG: bronze → silver → gold → 3 reconciliation checks
+│   └── sql/session_10_order_pipeline/ # SQLCheckOperator queries (silver empty, revenue > 0, row count match)
+├── jobs/
+│   ├── init_schema.py                 # register Delta tables in Hive Metastore (run once)
+│   ├── raw2bronze__marketplace_orders.py   # CSV → bronze Delta (mergeSchema; missing columns → WARNING, not error)
+│   ├── bronze2silver__orders.py            # bronze → silver (dedup on order_id, mask PII, status filter)
+│   └── silver2gold__fact_daily_revenue.py  # silver → gold (daily revenue per partner)
+├── runbooks/
+│   └── schema_change.md               # step-by-step RCA: symptom → Marquez trace → fix
+├── scripts/
+│   ├── generate_data.py               # generate and upload 3 days of order CSVs to MinIO
+│   └── inject_incident.py             # rename 'amount' → 'revenue' in 2026-06-15.csv (or restore)
+├── conf/                              # spark-defaults.conf, hive-site.xml, trino/, marquez.yml
+├── jars/                              # Delta + Hadoop JARs (git-ignored — copy from session_05)
+├── Dockerfile                         # extends session_05 image; adds apache-airflow-providers-trino
+└── docker-compose.yml
+```
+
+## Quick Start
+
+**1. Copy JARs from session_05**
 
 ```bash
 cp ../session_05_pyspark_lakehouse/jars/*.jar jars/
 ```
 
-### 2. Start the stack
+**2. Start the stack**
 
 ```bash
+cd session_10_incident
 docker compose up --build -d
+docker compose ps
 ```
 
-Wait until all services are healthy (~3 minutes). Trino takes the longest — verify with:
+Wait ~3 minutes for all services to become healthy. Trino takes the longest — confirm it is ready:
 
 ```bash
 curl -s http://localhost:8090/v1/info | grep '"starting":false'
 ```
 
-### 3. Upload sample data
+**3. Upload sample data**
 
 ```bash
 pip install minio
 python scripts/generate_data.py
 ```
 
-This uploads 3 days of order CSVs (`2026-06-13`, `2026-06-14`, `2026-06-15`) to MinIO.
+Uploads three days of order CSVs (`2026-06-13`, `2026-06-14`, `2026-06-15`) to `bronze/orders/` on MinIO.
 
-### 4. Register tables in Hive Metastore
-
-Run once before triggering the DAG for the first time:
+**4. Register Delta tables in Hive Metastore** (run once)
 
 ```bash
 docker exec session_10_incident-airflow-worker-1 spark-submit \
   --master spark://spark-master:7077 \
   --conf spark.driver.host=airflow-worker \
   --conf spark.driver.bindAddress=0.0.0.0 \
-  --jars /opt/jars/delta-spark_2.12-3.2.0.jar,/opt/jars/delta-storage-3.2.0.jar,/opt/jars/hadoop-aws-3.3.4.jar,/opt/jars/aws-java-sdk-bundle-1.12.262.jar \
   --py-files /opt/airflow/plugins/dataops_common/lakehouse_common.py \
   /opt/airflow/jobs/init_schema.py
 ```
 
-You should see:
+Expected output:
 ```
 INFO init_schema.py:25 Registered bronze.marketplace_orders
 INFO init_schema.py:31 Registered silver.orders
 INFO init_schema.py:37 Registered gold.fact_daily_revenue
 ```
 
-### 5. Run a clean baseline
+**5. Run a clean baseline**
 
-Trigger the DAG for `2026-06-13` and `2026-06-14` in Airflow UI (http://localhost:8888).
-All 4 tasks should turn green for each run.
+Trigger the DAG in Airflow UI (http://localhost:8888) for `2026-06-12T00:00:00+00:00` and `2026-06-13T00:00:00+00:00` (execution dates; `data_interval_end` maps to 2026-06-13 and 2026-06-14 respectively). All six tasks should turn green for each run.
 
-## Demo: Reproducing and Tracing the Incident
+## Demo Walkthrough
 
-### Step 1 — Inject the incident
+**Step 1 — Inject the incident**
 
 ```bash
 python scripts/inject_incident.py
 ```
 
-This renames `amount` → `revenue` in `bronze/orders/2026-06-15.csv` on MinIO.
+Renames `amount` → `revenue` in `bronze/orders/2026-06-15.csv` on MinIO.
 
-### Step 2 — Trigger the pipeline
+**Step 2 — Trigger the incident run**
 
-Trigger the DAG for `2026-06-15` in Airflow UI. Watch all Spark tasks go green — then
-see `reconciliation` fail with:
+Trigger the DAG for execution date `2026-06-14T00:00:00+00:00` in Airflow UI.
 
-```
-total_revenue is 0.0 for 2026-06-15 — expected > 0.
-Check silver_transform: 'amount' column may be null due to upstream schema change.
-```
+Watch `raw2bronze__marketplace_orders`, `bronze2silver__orders`, and `silver2gold__fact_daily_revenue` go green — then `reconcile__revenue__fact_daily_revenue` fails. The task log shows the Trino query returned `False`: revenue summed to zero.
 
-### Step 3 — Trace in Marquez
+**Step 3 — Trace in Marquez**
 
-Open `http://localhost:3000` and follow the steps in `runbooks/schema_change.md`.
+Open http://localhost:3000 and follow `runbooks/schema_change.md`.
 
-### Step 4 — Fix and verify
+**Step 4 — Fix and rerun**
 
 ```bash
-# Restore the correct column name
+# Restore the source file
 python scripts/inject_incident.py --restore
 
-# Rerun the full pipeline for the incident date
+# Clear and rerun the failed date
 docker exec session_10_incident-airflow-worker-1 \
-  airflow tasks clear session_10_order_pipeline -s 2026-06-15 -e 2026-06-16 -y
+  airflow tasks clear session_10_order_pipeline -s 2026-06-14 -e 2026-06-15 -y
 ```
 
-All 4 tasks should turn green and reconciliation should pass.
+All tasks should turn green and all three reconciliation checks should pass.
 
-## Folder Structure
+## Common Errors
 
-```
-session_10_incident/
-├── dags/
-│   └── session_10_order_pipeline.py   # Airflow DAG
-├── jobs/
-│   ├── init_schema.py                 # register Delta tables in Hive Metastore (run once)
-│   ├── bronze_load.py                 # CSV → bronze Delta
-│   ├── silver_transform.py            # bronze → silver (dedup, mask PII)
-│   └── gold_aggregate.py              # silver → gold (daily revenue)
-├── runbooks/
-│   └── schema_change.md               # step-by-step RCA guide
-├── scripts/
-│   ├── generate_data.py               # upload sample CSVs to MinIO
-│   └── inject_incident.py             # inject / restore the incident
-├── conf/                              # Spark, Hive, Trino, Marquez config
-├── jars/                              # Delta JARs (git-ignored, copy from session_05)
-└── docker-compose.yml
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Jar /opt/jars/delta-spark_2.12-3.2.0.jar not found` | JARs not copied before `docker compose up` | `cp ../session_05_pyspark_lakehouse/jars/*.jar jars/` then restart worker |
+| `Unknown hook type "trino"` | Image built without `apache-airflow-providers-trino` | `docker compose up --build -d` to rebuild from the session_10 Dockerfile |
+| `PATH_NOT_FOUND: s3a://bronze/orders/<date>.csv` | Wrong execution date used to trigger; CSV for that date does not exist | Trigger with an execution date whose `data_interval_end` matches an uploaded CSV (see Step 5 above) |
+| `total_revenue = 0` — all three Spark tasks green | Expected — this is the incident. The `reconcile__revenue__fact_daily_revenue` check catches it | Follow Step 3: trace in Marquez |
+| `ClassNotFoundException: DeltaSparkSessionExtension` | `spark.jars` in `spark-defaults.conf` points to missing JAR | Confirm `jars/` is populated and the volume mount in `docker-compose.yml` is correct |
+| Marquez graph empty after DAG runs | OpenLineage Spark listener jar missing from `$SPARK_HOME/jars/` | Check Dockerfile `RUN wget … openlineage-spark_2.12-1.9.1.jar` ran successfully: `docker exec session_10_incident-airflow-worker-1 ls $SPARK_HOME/jars/ \| grep openlineage` |
+| `duckdb` errors | Session 10 uses Delta Lake + Trino, not DuckDB | Ensure you are in `session_10_incident/` and not mixing with another session's stack |
+
+## Shutdown
+
+```bash
+docker compose down -v
 ```

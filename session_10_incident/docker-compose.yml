@@ -2,6 +2,7 @@ x-airflow-common:
   &airflow-common
   build:
     context: ../session_05_pyspark_lakehouse
+    dockerfile: ../session_10_incident/Dockerfile
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -15,6 +16,7 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW__WEBSERVER__WEB_SERVER_PORT: '8888'
     AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
+    AIRFLOW_CONN_TRINO_DEFAULT: 'trino://airflow@trino:8080/delta'
     AIRFLOW__WEBSERVER__SHOW_TRIGGER_FORM_IF_NO_PARAMS: 'true'
     AWS_ACCESS_KEY_ID: minioadmin
     AWS_SECRET_ACCESS_KEY: minioadmin

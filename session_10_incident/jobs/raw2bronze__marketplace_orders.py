@@ -5,7 +5,7 @@ import argparse
 from lakehouse_common import build_spark, get_logger
 from pyspark.sql.functions import col, to_date
 
-log = get_logger("bronze_load")
+log = get_logger("raw2bronze__marketplace_orders")
 
 EXPECTED_COLUMNS = {"order_id", "partner", "customer_email", "amount", "order_ts", "status"}
 
@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--ds", required=True)
 ds = parser.parse_args().ds
 
-spark = build_spark("orders-bronze-load")
+spark = build_spark("raw2bronze__marketplace_orders")
 
 raw_path = f"s3a://bronze/orders/{ds}.csv"
 df = spark.read.option("header", "true").option("inferSchema", "true").csv(raw_path)

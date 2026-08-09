@@ -1,11 +1,10 @@
-"""Upload sample order CSVs to MinIO bronze/orders/ for demo dates."""
 from __future__ import annotations
 
 import csv
 import io
 import logging
 import random
-from datetime import date, timedelta
+from datetime import date
 
 from minio import Minio
 
@@ -25,14 +24,16 @@ def make_csv(ds: date) -> bytes:
     writer = csv.writer(buf)
     writer.writerow(["order_id", "partner", "customer_email", "amount", "order_ts", "status"])
     for i in range(ROWS_PER_DAY):
-        writer.writerow([
-            f"ORD-{ds.strftime('%Y%m%d')}-{i:05d}",
-            random.choice(PARTNERS),
-            f"user{random.randint(1000, 9999)}@example.com",
-            round(random.uniform(50_000, 5_000_000), 0),
-            f"{ds}T{random.randint(0,23):02d}:{random.randint(0,59):02d}:00",
-            random.choice(STATUSES),
-        ])
+        writer.writerow(
+            [
+                f"ORD-{ds.strftime('%Y%m%d')}-{i:05d}",
+                random.choice(PARTNERS),
+                f"user{random.randint(1000, 9999)}@example.com",
+                round(random.uniform(50_000, 5_000_000), 0),
+                f"{ds}T{random.randint(0,23):02d}:{random.randint(0,59):02d}:00",
+                random.choice(STATUSES),
+            ]
+        )
     return buf.getvalue().encode()
 
 
