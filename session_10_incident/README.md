@@ -154,6 +154,8 @@ docker exec session_10_incident-trino-1 trino --server http://localhost:8080 --u
 
 ## Demo Walkthrough
 
+This walkthrough follows the standard RCA lifecycle: **Detect → Contain → Investigate → Fix → Post-mortem**. Each step maps to a real phase so you can see the framework in action, not just as theory.
+
 **Step 1 — Inject the incident**
 
 ```bash
@@ -162,11 +164,17 @@ python scripts/inject_incident.py
 
 Renames `amount` → `revenue` in `bronze/orders/2026-06-15.csv` on MinIO.
 
+---
+
+### ① Detect
+
 **Step 2 — Trigger the incident run**
 
 Trigger the DAG for execution date `2026-06-15T00:00:00+00:00` in Airflow UI (`data_interval_end = 2026-06-15` → reads the tampered `2026-06-15.csv`).
 
 Watch `raw2bronze__marketplace_orders`, `bronze2silver__orders`, and `silver2gold__fact_daily_revenue` go green — then `reconcile__revenue__fact_daily_revenue` fails. The task log shows the Trino query returned `False`: revenue summed to zero.
+
+The reconciliation check is your monitoring. Without it, this incident produces no alert — the pipeline finishes green and bad data lands silently in gold.
 
 Confirm the silent failure via Trino:
 
@@ -184,14 +192,66 @@ WHERE order_date = DATE '2026-06-15'
 GROUP BY 1;
 ```
 
-**Step 3 — Trace in Marquez**
+---
 
-Open http://localhost:3000 and follow `runbooks/schema_change.md`.
+### ② Contain
+
+**Before investigating or fixing**, contain the blast radius. Bad data is already in gold for `2026-06-15` — any downstream consumer reading that table now will see `total_revenue = 0` and may act on it.
+
+Two actions to take immediately:
+
+1. **Notify stakeholders** — alert the team that `fact_daily_revenue` for `2026-06-15` is unreliable. Do not wait until the fix is ready.
+2. **Block downstream** — if any job or report reads from `gold.fact_daily_revenue` on a schedule, pause it now. In this stack there are no automated downstream jobs, but in production this step prevents cascading bad data.
+
+Contain ≠ Fix. The goal is to stop the damage from spreading while you investigate the root cause.
+
+---
+
+### ③ Investigate
+
+**Step 3 — Trace the root cause**
+
+Three Spark tasks are green, row counts are normal, but `total_revenue = 0`. Something changed in the data itself — not the pipeline. The question is: at which layer did the value go missing?
+
+**Option A — Convention-based lineage (no tools needed)**
+
+Read the job names in `jobs/`:
+
+```
+raw2bronze__marketplace_orders.py      CSV → bronze.marketplace_orders
+bronze2silver__orders.py               bronze.marketplace_orders → silver.orders
+silver2gold__fact_daily_revenue.py     silver.orders → gold.fact_daily_revenue
+reconcile__revenue__fact_daily_revenue.sql  checks gold.fact_daily_revenue
+```
+
+The naming convention encodes the full lineage path. Revenue is summed in `silver2gold`, which reads `amount` from silver. Silver selects `amount` from bronze. Bronze ingests from the CSV. Start at the bottom: check whether `amount` exists in the source CSV for `2026-06-15`.
+
+Confirm by searching the Airflow task log for `raw2bronze__marketplace_orders` (incident run). The job warns when a column is missing — search by keyword `missing expected columns` in the task log. Airflow wraps all Spark output as `INFO`, so filtering by log level will not find it:
+
+```
+WARNING raw2bronze__marketplace_orders.py:28 Source CSV is missing expected columns: {'amount'} — they will be null in bronze
+```
+
+This confirms the column disappeared at the bronze ingestion step — the source CSV is the root cause.
+
+**Option B — Tool-based lineage via Marquez**
+
+Revenue = 0 but all pipeline tasks are green — the data passed through without error, but the value is wrong. The question is: at which layer did `amount` go missing? Marquez recorded the schema of every dataset at every run, so you can trace the answer directly from the lineage graph.
+
+Open http://localhost:3000, navigate from `gold.fact_daily_revenue` upstream layer by layer, and inspect the field list on each dataset node. When you reach `bronze.marketplace_orders`, the field list at the incident run shows `revenue` instead of `amount` — the column was renamed in the source CSV without notice. Root cause confirmed in under two minutes.
+
+Follow `runbooks/schema_change.md` for the exact navigation steps.
+
+---
+
+### ④ Fix
 
 **Step 4 — Fix and rerun**
 
+Root cause confirmed: upstream renamed `amount` → `revenue` in the source CSV. Fix the source, then rerun the failed date.
+
 ```bash
-# Restore the source file
+# Restore the correct column name in the source file
 python scripts/inject_incident.py --restore
 
 # Clear and rerun the failed date
@@ -211,6 +271,19 @@ ORDER BY partner;
 ```
 
 Expected: `total_revenue > 0` for all rows.
+
+---
+
+### ⑤ Post-mortem
+
+The runbook at `runbooks/schema_change.md` is the post-mortem artifact for this incident class. It documents the symptom, the investigation path, the fix, and the escalation criteria — so the next engineer who sees `total_revenue = 0` does not start from zero.
+
+Two things to update after every real incident of this type:
+
+- **Runbook** — add any new signal or navigation step you discovered during the investigation
+- **Schema contract** — consider adding an explicit column check in `raw2bronze__marketplace_orders` that fails fast instead of silently accepting a renamed column
+
+Post-mortem is the step that turns a one-time fix into institutional knowledge. Skip it and the same incident takes just as long to resolve the second time.
 
 ## Common Errors
 
