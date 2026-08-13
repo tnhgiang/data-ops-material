@@ -178,25 +178,29 @@ _[your design]_
 
 ## 6. Monitoring & Alerting
 
-### Metrics
+### 6.1 Three Monitoring Levels
 
-| Metric | Source | Alert threshold | Alert destination |
-|--------|--------|----------------|------------------|
-| Pipeline completion time | Airflow | > 07:30 AM | _[Slack / email]_ |
-| Records loaded per source | Custom metric | Δ > 10% vs yesterday | _[destination]_ |
-| SFTP files rejected | Pipeline log | Any rejection | _[destination]_ |
-| API rate limit hits | Pipeline log | > 5 per run | _[destination]_ |
-| Revenue reconciliation delta | DQ check | Δ > 0.01% | _[destination]_ |
+| Level | What to monitor | Tool |
+|-------|----------------|------|
+| **Infrastructure** | Host/container health (CPU, memory, disk, container up/down) | _[your choice]_ |
+| **Service / Application** | Internal platform health — Airflow scheduler, MinIO, Spark, DuckDB, etc. | _[your choice]_ |
+| **Job** | DAG success/fail, task duration, DQ check results, record counts | _[your choice]_ |
 
-### Dashboard Layout
+> For each level: what tool, how alerts are routed, and how fast incidents are detected.
 
-> Describe or sketch your Grafana (or equivalent) dashboard layout.
+_[your design]_
 
-- **Row 1**: Pipeline status — last run time, success/fail, duration
-- **Row 2**: Record counts per source — today vs yesterday
-- **Row 3**: Data quality — DQ check results, SFTP rejections
-- **Row 4**: Revenue reconciliation — source vs DWH
-- _[add panels as needed]_
+### 6.2 Alert Routing
+
+> Who gets alerted, via what channel, within how long?
+
+_[your design]_
+
+### 6.3 Dashboard _(Nice to Have)_
+
+> A single view that lets on-call answer the 3 questions in Section 4.5 without SSH. Tool is your choice — Airflow UI, Grafana, or anything equivalent.
+
+_[your design]_
 
 ---
 
