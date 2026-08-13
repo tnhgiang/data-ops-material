@@ -1,4 +1,4 @@
-# ShopVN Analytics Platform — Design Document
+# Data Platform — Design Document
 
 **Date**: _YYYY-MM-DD_
 
@@ -77,6 +77,9 @@ _[Describe your overall approach in 3–5 sentences]_
 ### 4.1 Architecture Diagram
 
 ![Architecture Diagram](images/architecture.png)
+
+*Define HLD and add it to images/architecture.png path.*
+
 
 ### 4.2 Component Overview
 
@@ -168,6 +171,8 @@ _[your design]_
 > Mô tả cách xử lý từng loại failure: PostgreSQL DQ issues, API errors (429 / timeout / 404 / 500 / 400), SFTP failures (missing / corrupt / late). Tham khảo `01_project_requirements.md` Section 5 để biết danh sách đầy đủ.
 
 _[your design]_
+
+### 5.9 You can add other sections if necessary for you presentation.
 
 ---
 
